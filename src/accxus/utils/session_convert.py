@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from accxus.core.types import SessionKind
+from accxus.types import SessionKind
 
 _TELETHON_MARKER = "server_address"
 

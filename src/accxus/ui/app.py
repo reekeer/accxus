@@ -6,8 +6,8 @@ import logging
 from typing import Any
 
 from rigi.core.app import RigiApp
-from rigi.core.types import TabDef
 from rigi.core.settings_manager import Setting
+from rigi.core.types import TabDef
 from rigi.layout.pane import RigiCard, RigiPane
 from rigi.widgets import Label, RigiBottomPanel
 
@@ -109,31 +109,43 @@ def _build_app() -> RigiApp:
             "API ID",
             description="Telegram API ID",
             value_fn=lambda: str(cfg.config.tg_api_id),
-            write_fn=lambda v: (
+            write_fn=lambda v: (  # pyright: ignore[reportUnknownLambdaType]
                 setattr(cfg.config, "tg_api_id", int(v) if v.isdigit() else cfg.config.tg_api_id),
-                cfg.save_config(cfg.config)
-            ),
+                cfg.save_config(cfg.config),
+            ) and None,
         ),
         Setting(
             "API Hash",
             description="Telegram API Hash",
             value_fn=lambda: cfg.config.tg_api_hash,
-            write_fn=lambda v: (setattr(cfg.config, "tg_api_hash", v), cfg.save_config(cfg.config)),
+            write_fn=lambda v: (  # pyright: ignore[reportUnknownLambdaType]
+                setattr(cfg.config, "tg_api_hash", v),
+                cfg.save_config(cfg.config),
+            ) and None,
         ),
         Setting(
             "Device Model",
             value_fn=lambda: cfg.config.tg_device_model,
-            write_fn=lambda v: (setattr(cfg.config, "tg_device_model", v), cfg.save_config(cfg.config)),
+            write_fn=lambda v: (  # pyright: ignore[reportUnknownLambdaType]
+                setattr(cfg.config, "tg_device_model", v),
+                cfg.save_config(cfg.config),
+            ) and None,
         ),
         Setting(
             "App Version",
             value_fn=lambda: cfg.config.tg_app_version,
-            write_fn=lambda v: (setattr(cfg.config, "tg_app_version", v), cfg.save_config(cfg.config)),
+            write_fn=lambda v: (  # pyright: ignore[reportUnknownLambdaType]
+                setattr(cfg.config, "tg_app_version", v),
+                cfg.save_config(cfg.config),
+            ) and None,
         ),
         Setting(
             "System Version",
             value_fn=lambda: cfg.config.tg_system_version,
-            write_fn=lambda v: (setattr(cfg.config, "tg_system_version", v), cfg.save_config(cfg.config)),
+            write_fn=lambda v: (  # pyright: ignore[reportUnknownLambdaType]
+                setattr(cfg.config, "tg_system_version", v),
+                cfg.save_config(cfg.config),
+            ) and None,
         ),
     ]
 
