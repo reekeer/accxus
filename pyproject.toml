@@ -18,7 +18,6 @@ maintainers = [
 ]
 dependencies = [
     "rigi @ git+https://github.com/reekeer/Rigi.git@v1.0.0",
-    "textual>=8.2.5",
     "pyrogram==2.0.106",
     "TgCrypto",
     "aiohttp>=3.9",
