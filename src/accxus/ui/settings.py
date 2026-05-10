@@ -67,6 +67,13 @@ class SettingsTab(Widget):
 
         yield Static("", id="status_msg")
 
+        yield Rule()
+        yield Label("[dim]Credits[/dim]")
+        yield Static(
+            "Author: [bold cyan]@IMDelewer[/bold cyan]\n"
+            "Maintainer: [bold magenta]@xeltorV[/bold magenta]"
+        )
+
     def _status(self, text: str) -> None:
         with contextlib.suppress(Exception):
             self.query_one("#status_msg", Static).update(text)
