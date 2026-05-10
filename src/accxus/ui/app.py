@@ -21,6 +21,8 @@ from accxus.ui.tg.add_session import AddSessionTab
 from accxus.ui.tg.messages import MessagesTab
 from accxus.ui.tg.parsing import ParsingTab
 from accxus.ui.tg.sessions import SessionsTab
+from accxus import __version__
+
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +56,7 @@ def _write(app_: RigiApp, text: str) -> None:
 def _build_app() -> RigiApp:
     app = RigiApp(
         name="accxus",
-        version="0.2.0",
+        version=__version__,
         description="Telegram session manager",
         home_tab="Telegram",
     )
@@ -423,7 +425,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     app = _build_app()
     RigiApp.run_cli(app)
-
+        
 
 if __name__ == "__main__":
     main()
