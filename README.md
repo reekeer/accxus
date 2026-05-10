@@ -109,13 +109,6 @@ Contributions are welcome! Please read our [CONTRIBUTING.md](CONTRIBUTING.md) fo
 
 ---
 
-## 👥 Credits
-
-- **@IMDelewer** — Author
-- **@xeltorV** — Maintainer
-
----
-
 <p align="center">
   Powered by <a href="https://github.com/reekeer/Rigi">Rigi</a>
 </p>
