@@ -16,7 +16,7 @@ def test_no_pyrogram_at_import_time() -> None:
         if key.startswith("pyrogram"):
             del sys.modules[key]
 
-    import accxus.ui.app  # noqa: F401 — import side-effect test
+    import accxus.ui.app  # noqa: F401 — import side-effect test # pyright: ignore[reportUnusedImport]
 
     assert "pyrogram" not in sys.modules, (
         "pyrogram was imported at module level — that crashes Python 3.14. "
@@ -27,7 +27,7 @@ def test_no_pyrogram_at_import_time() -> None:
 def test_build_app_returns_rigi_app() -> None:
     from rigi import RigiApp
 
-    from accxus.ui.app import _build_app
+    from accxus.ui.app import _build_app  # pyright: ignore[reportPrivateUsage]
 
     app = _build_app()
     assert isinstance(app, RigiApp)

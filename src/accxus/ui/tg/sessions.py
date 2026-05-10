@@ -4,11 +4,7 @@ import asyncio
 import logging
 from typing import Any
 
-from rigi import (
-    ComposeResult,
-    ModalScreen,
-    Widget,
-)
+from rigi import ComposeResult, ModalScreen, Widget
 from rigi.widgets import (
     Button,
     DataTable,
@@ -17,7 +13,6 @@ from rigi.widgets import (
     Static,
 )
 
-from accxus.core.types import SessionInfo, SessionStatus
 from accxus.platforms.telegram import (
     client as tg_client,
 )
@@ -27,9 +22,9 @@ from accxus.platforms.telegram import (
 from accxus.platforms.telegram import (
     sessions as tg_sessions,
 )
+from accxus.types import SessionInfo, SessionStatus
 
 log = logging.getLogger(__name__)
-
 
 
 class LoginScreen(ModalScreen[str | None]):
@@ -202,8 +197,6 @@ class LoginScreen(ModalScreen[str | None]):
             stat.update(f"[red]{e}[/red]")
 
 
-
-
 class ImportSessionScreen(ModalScreen[str | None]):
     DEFAULT_CSS = """
     ImportSessionScreen { align: center middle; }
@@ -255,8 +248,6 @@ class ImportSessionScreen(ModalScreen[str | None]):
         else:
             stat.update(f"[red]{msg}[/red]")
             self.query_one("#btn_imp", Button).disabled = False
-
-
 
 
 class EditProfileScreen(ModalScreen[bool]):
@@ -315,8 +306,6 @@ class EditProfileScreen(ModalScreen[bool]):
             self.query_one("#btn_save", Button).disabled = False
 
 
-
-
 class SetAvatarScreen(ModalScreen[bool]):
     DEFAULT_CSS = """
     SetAvatarScreen { align: center middle; }
@@ -365,8 +354,6 @@ class SetAvatarScreen(ModalScreen[bool]):
         except Exception as e:
             stat.update(f"[red]{e}[/red]")
             self.query_one("#btn_upload", Button).disabled = False
-
-
 
 
 class ExportChatScreen(ModalScreen[bool]):
@@ -438,8 +425,6 @@ class ExportChatScreen(ModalScreen[bool]):
         finally:
             for btn_id in ("btn_json", "btn_txt"):
                 self.query_one(f"#{btn_id}", Button).disabled = False
-
-
 
 
 class SessionsTab(Widget):

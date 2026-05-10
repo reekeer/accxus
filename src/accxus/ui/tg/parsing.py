@@ -153,7 +153,6 @@ class ParsingTab(Widget):
     def on_mount(self) -> None:
         self._reload_groups_table()
 
-
     def _build_chats_pane(self) -> None:
         pane = self.query_one("#chats_pane")
         choices = _session_select_choices()
@@ -209,7 +208,6 @@ class ParsingTab(Widget):
         finally:
             self.query_one("#btn_fetch_chats", Button).disabled = False
 
-
     def _build_export_pane(self) -> None:
         pane = self.query_one("#export_pane")
         choices = _session_select_choices()
@@ -227,7 +225,6 @@ class ParsingTab(Widget):
         )
         pane.mount(Static("", id="exp_status"))
         pane.mount(RichLog(id="export_log", markup=True, classes="plog"))
-
 
     def _build_parse_pane(self) -> None:
         pane = self.query_one("#parse_pane")
@@ -251,7 +248,6 @@ class ParsingTab(Widget):
             )
         )
         pane.mount(RichLog(id="parse_log", markup=True, classes="plog"))
-
 
     def _build_groups_pane(self) -> None:
         pane = self.query_one("#groups_pane")
@@ -278,7 +274,6 @@ class ParsingTab(Widget):
         for name, data in _load_groups().items():
             tbl.add_row(name, str(len(data.get("users", []))), data.get("created", "—"), key=name)
 
-
     def _build_profiles_pane(self) -> None:
         pane = self.query_one("#profiles_pane")
         choices = _session_select_choices()
@@ -294,7 +289,6 @@ class ParsingTab(Widget):
             )
         )
         pane.mount(RichLog(id="profiles_log", markup=True, classes="plog"))
-
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
@@ -318,7 +312,6 @@ class ParsingTab(Widget):
             await self._do_snapshot()
         elif bid == "btn_prof_history":
             self._show_profile_history()
-
 
     async def _do_export(self, fmt: str) -> None:
         session = _get_session(self, "#exp_sess")
@@ -355,7 +348,6 @@ class ParsingTab(Widget):
         finally:
             for bid in ("btn_exp_json", "btn_exp_txt"):
                 self.query_one(f"#{bid}", Button).disabled = False
-
 
     async def _do_parse(self) -> None:
         session = _get_session(self, "#pu_sess")
@@ -444,7 +436,6 @@ class ParsingTab(Widget):
         _save_groups(groups)
         self._reload_groups_table()
         self.app.notify(f"Group '{name}' deleted", title="Groups", severity="warning")
-
 
     async def _do_snapshot(self) -> None:
         session = _get_session(self, "#prof_sess")
