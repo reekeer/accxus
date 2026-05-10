@@ -1,0 +1,87 @@
+[build-system]
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name        = "accxus"
+version     = "0.1.0"
+description = "accxus is a program where you can create, manage, and modify accounts on various social networks. It uses SMS activation services for registration."
+readme      = "README.md"
+requires-python = ">=3.10"
+license     = { text = "MIT" }
+
+authors = {
+    name = "reekeer"
+}
+dependencies = [
+    "rigi @ git+https://github.com/reekeer/Rigi.git",
+    "pyrogram==2.0.106",
+    "TgCrypto",
+    "aiohttp>=3.9",
+    "pydantic>=2.5",
+]
+
+[project.optional-dependencies]
+socks = ["aiohttp-socks>=0.8"]
+dev   = [
+    "ruff>=0.4",
+    "black>=24",
+    "pyright>=1.1",
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+accxus = "accxus.ui.app:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/accxus"]
+
+[tool.ruff]
+line-length    = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select  = ["E", "F", "I", "N", "UP", "B", "C4", "SIM", "ANN"]
+ignore  = [
+    "ANN101",
+    "ANN102",
+    "ANN401",
+    "B008",
+    "E501",
+    "SIM108",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["accxus"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/accxus/core/types.py" = ["F401", "F403"]
+
+[tool.black]
+line-length    = 100
+target-version = ["py310", "py311", "py312", "py313"]
+
+[tool.pyright]
+pythonVersion             = "3.10"
+pythonPlatform            = "All"
+typeCheckingMode          = "strict"
+include                   = ["src/accxus"]
+exclude                   = ["**/__pycache__", "**/*.pyi", "**/.venv", "**/venv"]
+venvPath                  = "."
+venv                      = ".venv"
+reportMissingImports      = "warning"
+reportMissingModuleSource  = false
+reportUnknownMemberType    = false
+reportAttributeAccessIssue = false
+reportUnknownArgumentType  = false
+reportUnknownVariableType  = false
+reportUnknownParameterType = false
+reportMissingTypeStubs     = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths    = ["tests"]
