@@ -5,7 +5,9 @@ import datetime
 import logging
 from typing import Any
 
-from rigi import RigiApp, TabDef, Setting
+from rigi.core.app import RigiApp
+from rigi.core.types import TabDef
+from rigi.core.settings_manager import Setting
 from rigi.layout.pane import RigiCard, RigiPane
 from rigi.widgets import Label, RigiBottomPanel
 
