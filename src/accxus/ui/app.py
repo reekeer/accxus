@@ -12,6 +12,7 @@ from rigi.layout.pane import RigiCard, RigiPane
 from rigi.widgets import Label, RigiBottomPanel
 
 import accxus.config as cfg
+from accxus import __version__
 from accxus.ui.proxy.add import AddProxyTab
 from accxus.ui.proxy.checker import ProxyCheckerTab
 from accxus.ui.proxy.view import ViewProxiesTab
@@ -21,8 +22,6 @@ from accxus.ui.tg.add_session import AddSessionTab
 from accxus.ui.tg.messages import MessagesTab
 from accxus.ui.tg.parsing import ParsingTab
 from accxus.ui.tg.sessions import SessionsTab
-from accxus import __version__
-
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +50,33 @@ def _write(app_: RigiApp, text: str) -> None:
         app_.query_one(RigiBottomPanel).write_output(text)
     except Exception:
         app_.notify(text)
+
+
+def _write_api_id(v: str) -> None:
+    if v.isdigit():
+        cfg.config.tg_api_id = int(v)
+
+    cfg.save_config(cfg.config)
+
+
+def _write_api_hash(v: str) -> None:
+    cfg.config.tg_api_hash = v
+    cfg.save_config(cfg.config)
+
+
+def _write_device_model(v: str) -> None:
+    cfg.config.tg_device_model = v
+    cfg.save_config(cfg.config)
+
+
+def _write_app_version(v: str) -> None:
+    cfg.config.tg_app_version = v
+    cfg.save_config(cfg.config)
+
+
+def _write_system_version(v: str) -> None:
+    cfg.config.tg_system_version = v
+    cfg.save_config(cfg.config)
 
 
 def _build_app() -> RigiApp:
@@ -111,43 +137,28 @@ def _build_app() -> RigiApp:
             "API ID",
             description="Telegram API ID",
             value_fn=lambda: str(cfg.config.tg_api_id),
-            write_fn=lambda v: (  # pyright: ignore[reportUnknownLambdaType]
-                setattr(cfg.config, "tg_api_id", int(v) if v.isdigit() else cfg.config.tg_api_id),
-                cfg.save_config(cfg.config),
-            ) and None,
+            write_fn=_write_api_id,
         ),
         Setting(
             "API Hash",
             description="Telegram API Hash",
             value_fn=lambda: cfg.config.tg_api_hash,
-            write_fn=lambda v: (  # pyright: ignore[reportUnknownLambdaType]
-                setattr(cfg.config, "tg_api_hash", v),
-                cfg.save_config(cfg.config),
-            ) and None,
+            write_fn=_write_api_hash,
         ),
         Setting(
             "Device Model",
             value_fn=lambda: cfg.config.tg_device_model,
-            write_fn=lambda v: (  # pyright: ignore[reportUnknownLambdaType]
-                setattr(cfg.config, "tg_device_model", v),
-                cfg.save_config(cfg.config),
-            ) and None,
+            write_fn=_write_device_model,
         ),
         Setting(
             "App Version",
             value_fn=lambda: cfg.config.tg_app_version,
-            write_fn=lambda v: (  # pyright: ignore[reportUnknownLambdaType]
-                setattr(cfg.config, "tg_app_version", v),
-                cfg.save_config(cfg.config),
-            ) and None,
+            write_fn=_write_app_version,
         ),
         Setting(
             "System Version",
             value_fn=lambda: cfg.config.tg_system_version,
-            write_fn=lambda v: (  # pyright: ignore[reportUnknownLambdaType]
-                setattr(cfg.config, "tg_system_version", v),
-                cfg.save_config(cfg.config),
-            ) and None,
+            write_fn=_write_system_version,
         ),
     ]
 
@@ -425,7 +436,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     app = _build_app()
     RigiApp.run_cli(app)
-        
+
 
 if __name__ == "__main__":
     main()
