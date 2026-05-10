@@ -5,7 +5,9 @@ import datetime
 import logging
 from typing import Any
 
-from rigi import Label, RigiApp, RigiBottomPanel, RigiCard, RigiPane, Setting, TabDef
+from rigi import RigiApp, TabDef, Setting
+from rigi.layout.pane import RigiCard, RigiPane
+from rigi.widgets import Label, RigiBottomPanel
 
 import accxus.config as cfg
 from accxus.ui.proxy.add import AddProxyTab

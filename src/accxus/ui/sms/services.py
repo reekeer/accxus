@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from rigi import Button, ComposeResult, DataTable, Label, RigiCard, RigiPane, Select, Widget
+from rigi import ComposeResult, Widget
+from rigi.layout.pane import RigiCard, RigiPane
+from rigi.widgets import Button, DataTable, Label, Select
 
 import accxus.config as cfg
 from accxus.core.sms.manager import SmsManager

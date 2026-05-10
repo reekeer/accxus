@@ -4,7 +4,8 @@ import contextlib
 import logging
 from typing import Any
 
-from rigi import Button, ComposeResult, Input, Label, Rule, Static, Widget
+from rigi import ComposeResult, Widget
+from rigi.widgets import Button, Input, Label, Rule, Static
 
 import accxus.config as cfg
 from accxus.platforms.telegram import sessions as tg_sessions

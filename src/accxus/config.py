@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from rigi import config_dir, data_dir
+from rigi.core.platform import config_dir, data_dir
 
 from accxus.types.core import AppConfig
 
