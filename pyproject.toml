@@ -10,9 +10,12 @@ readme      = "README.md"
 requires-python = ">=3.10"
 license     = { text = "MIT" }
 
-authors = {
-    name = "reekeer"
-}
+authors = [
+    { name = "IMDelewer" },
+]
+maintainers = [
+    { name = "xeltorV" },
+]
 dependencies = [
     "rigi @ git+https://github.com/reekeer/Rigi.git",
     "pyrogram==2.0.106",
