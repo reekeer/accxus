@@ -5,16 +5,14 @@ import datetime
 import logging
 from typing import Any
 
-from rigi import RigiApp, TabDef
+from rigi import RigiApp, TabDef, Setting
 from rigi.layout.pane import RigiCard, RigiPane
-from rigi.widgets import Label
-from rigi.widgets.bottom_panel import RigiBottomPanel
+from rigi.widgets import Label, RigiBottomPanel
 
 import accxus.config as cfg
 from accxus.ui.proxy.add import AddProxyTab
 from accxus.ui.proxy.checker import ProxyCheckerTab
 from accxus.ui.proxy.view import ViewProxiesTab
-from accxus.ui.settings import SettingsTab
 from accxus.ui.sms.providers import SmsProvidersTab
 from accxus.ui.sms.services import SmsServicesTab
 from accxus.ui.tg.add_session import AddSessionTab
@@ -103,8 +101,45 @@ def _build_app() -> RigiApp:
     sms_tab.add_subtab("Services", SmsServicesTab, icon="")
     app.add_tab(sms_tab)
 
-    settings_tab = TabDef(name="Settings", key="4", icon="⚙️", widget_factory=SettingsTab)
-    app.add_tab(settings_tab)
+    tg_settings = app.settings.add_page("Telegram")
+    tg_settings.settings = [
+        Setting(
+            "API ID",
+            description="Telegram API ID",
+            value_fn=lambda: str(cfg.config.tg_api_id),
+            write_fn=lambda v: (
+                setattr(cfg.config, "tg_api_id", int(v) if v.isdigit() else cfg.config.tg_api_id),
+                cfg.save_config(cfg.config)
+            ),
+        ),
+        Setting(
+            "API Hash",
+            description="Telegram API Hash",
+            value_fn=lambda: cfg.config.tg_api_hash,
+            write_fn=lambda v: (setattr(cfg.config, "tg_api_hash", v), cfg.save_config(cfg.config)),
+        ),
+        Setting(
+            "Device Model",
+            value_fn=lambda: cfg.config.tg_device_model,
+            write_fn=lambda v: (setattr(cfg.config, "tg_device_model", v), cfg.save_config(cfg.config)),
+        ),
+        Setting(
+            "App Version",
+            value_fn=lambda: cfg.config.tg_app_version,
+            write_fn=lambda v: (setattr(cfg.config, "tg_app_version", v), cfg.save_config(cfg.config)),
+        ),
+        Setting(
+            "System Version",
+            value_fn=lambda: cfg.config.tg_system_version,
+            write_fn=lambda v: (setattr(cfg.config, "tg_system_version", v), cfg.save_config(cfg.config)),
+        ),
+    ]
+
+    credits_page = app.settings.add_page("Credits")
+    credits_page.settings = [
+        Setting("Author", value_fn=lambda: "@IMDelewer"),
+        Setting("Maintainer", value_fn=lambda: "@xeltorV"),
+    ]
 
     @app.on_startup
     async def _balance_loop(  # pyright: ignore[reportUnusedFunction,reportUnusedParameter]
