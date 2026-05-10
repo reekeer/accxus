@@ -17,7 +17,7 @@ maintainers = [
     { name = "xeltorV" },
 ]
 dependencies = [
-    "rigi @ git+https://github.com/reekeer/Rigi.git@v1.0.0",
+    "rigi @ git+https://github.com/reekeer/Rigi.git",
     "pyrogram==2.0.106",
     "TgCrypto",
     "aiohttp>=3.9",
