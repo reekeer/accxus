@@ -5,16 +5,14 @@ import logging
 from typing import Any
 
 from rigi import (
-    ComposeResult,
-    ModalScreen,
-    Widget,
-)
-from rigi.widgets import (
     Button,
+    ComposeResult,
     DataTable,
     Input,
     Label,
+    ModalScreen,
     Static,
+    Widget,
 )
 
 from accxus.core.types import SessionInfo, SessionStatus

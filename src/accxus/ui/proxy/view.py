@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from rigi import ComposeResult, Widget
-from rigi.layout.pane import RigiCard, RigiPane
-from rigi.widgets import Button, DataTable, Label
+from rigi import Button, ComposeResult, DataTable, Label, RigiCard, RigiPane, Widget
 
 import accxus.config as cfg
 from accxus.core.proxy.checker import check_proxy, lookup_proxy_country

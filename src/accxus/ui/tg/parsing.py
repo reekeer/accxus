@@ -7,9 +7,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from rigi import ComposeResult, Widget
-from rigi.widgets import (
+from rigi import (
     Button,
+    ComposeResult,
     DataTable,
     Input,
     Label,
@@ -18,6 +18,7 @@ from rigi.widgets import (
     Static,
     TabbedContent,
     TabPane,
+    Widget,
 )
 
 import accxus.config as cfg

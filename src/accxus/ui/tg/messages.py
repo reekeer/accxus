@@ -5,9 +5,7 @@ import contextlib
 import logging
 from collections.abc import Callable
 
-from rigi import ComposeResult, Widget
-from rigi.widgets import Button, DataTable, Input, Label, RichLog, TextArea
-from rigi.widgets.bottom_panel import RigiBottomPanel
+from rigi import Button, ComposeResult, DataTable, Input, Label, RigiBottomPanel, RichLog, TextArea, Widget
 
 from accxus.core.types import SendResult
 from accxus.platforms.telegram import messaging as tg_msg

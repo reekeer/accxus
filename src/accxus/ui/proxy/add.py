@@ -3,9 +3,7 @@ from __future__ import annotations
 import contextlib
 import urllib.parse
 
-from rigi import ComposeResult, Widget
-from rigi.layout.pane import RigiCard, RigiPane
-from rigi.widgets import Button, Input, Label, Select, Static
+from rigi import Button, ComposeResult, Input, Label, RigiCard, RigiPane, Select, Static, Widget
 
 import accxus.config as cfg
 from accxus.core.proxy.checker import check_proxy, lookup_proxy_country
