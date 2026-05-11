@@ -105,10 +105,14 @@ class ParsingTab(Widget):
     .pform Select { margin-bottom: 1; width: 44; }
     .prow { layout: horizontal; height: auto; margin-bottom: 1; }
     .prow Input { width: 28; margin-right: 1; }
+    .prow Select { width: 28; margin-right: 1; }
+    .prow Static { width: 28; margin-right: 1; height: 3; content-align: left middle; }
     .prow Button { margin-right: 1; }
     .plog { height: 12; margin-top: 1; }
     #groups_table { height: 10; margin-bottom: 1; }
-    #chats_table { height: 1fr; margin-bottom: 1; }
+    #chats_pane { overflow: hidden; }
+    #chats_controls { height: auto; }
+    #chats_table { height: 1fr; min-height: 10; margin-bottom: 1; }
     """
 
     def __init__(self) -> None:
@@ -121,25 +125,22 @@ class ParsingTab(Widget):
         choices = _session_select_choices()
         with TabbedContent():
             with TabPane("Chats", id="tp_chats"), Widget(classes="pform", id="chats_pane"):
-                yield Label(
-                    "[bold]Selected Chats[/bold]\n[dim]Fetch, then click rows to toggle[/dim]"
-                )
-                yield Select(choices, id="chats_sess", prompt="Select session")
-                yield Select(_KIND_LABELS, value="all", id="chats_kind")
-                yield Input(
-                    placeholder="Manual chats fallback: @chat, @chat2",
-                    id="chats_selected",
-                )
-                yield Input(placeholder="Output dir (default: exported_chats)", id="chats_out")
-                yield Input(placeholder="Media dir (default: media)", id="chats_media")
-                yield Input(placeholder="History limit per chat (blank = all)", id="chats_limit")
-                with Widget(classes="prow"):
-                    yield Button("Fetch Chats", id="btn_fetch_chats", variant="primary")
-                    yield Button("All", id="btn_select_all_chats")
-                    yield Button("Clear", id="btn_clear_chats")
-                    yield Button("Export Selected JSON", id="btn_export_chats", variant="success")
-                    yield Button("Parse Users", id="btn_parse_chats", variant="success")
-                yield Static("", id="chats_status")
+                with Widget(id="chats_controls"):
+                    with Widget(classes="prow"):
+                        yield Select(choices, id="chats_sess", prompt="Session")
+                        yield Select(_KIND_LABELS, value="all", id="chats_kind")
+                        yield Static("Fetched chats: 0", id="chats_status")
+                    with Widget(classes="prow"):
+                        yield Input(placeholder="Output (default: exported_chats)", id="chats_out")
+                        yield Input(placeholder="History limit (blank = all)", id="chats_limit")
+                    with Widget(classes="prow"):
+                        yield Button("Fetch Chats", id="btn_fetch_chats", variant="primary")
+                        yield Button("All", id="btn_select_all_chats")
+                        yield Button("Clear", id="btn_clear_chats")
+                        yield Button(
+                            "Export Selected JSON", id="btn_export_chats", variant="success"
+                        )
+                        yield Button("Parse Users", id="btn_parse_chats", variant="success")
                 yield DataTable(id="chats_table", cursor_type="row", zebra_stripes=True)
             with TabPane("Export Chat", id="tp_export"), Widget(classes="pform", id="export_pane"):
                 yield Label("[bold]Export Chat History[/bold]")
@@ -193,25 +194,29 @@ class ParsingTab(Widget):
         pane = self.query_one("#chats_pane")
         choices = _session_select_choices()
         pane.mount(
-            Label("[bold]Selected Chats[/bold]\n[dim]Fetch, then click rows to toggle[/dim]")
-        )
-        pane.mount(Select(choices, id="chats_sess", prompt="Select session"))
-        pane.mount(Select(_KIND_LABELS, value="all", id="chats_kind"))
-        pane.mount(Input(placeholder="Manual chats fallback: @chat, @chat2", id="chats_selected"))
-        pane.mount(Input(placeholder="Output dir (default: exported_chats)", id="chats_out"))
-        pane.mount(Input(placeholder="Media dir (default: media)", id="chats_media"))
-        pane.mount(Input(placeholder="History limit per chat (blank = all)", id="chats_limit"))
-        pane.mount(
             Widget(
-                Button("Fetch Chats", id="btn_fetch_chats", variant="primary"),
-                Button("All", id="btn_select_all_chats"),
-                Button("Clear", id="btn_clear_chats"),
-                Button("Export Selected JSON", id="btn_export_chats", variant="success"),
-                Button("Parse Users", id="btn_parse_chats", variant="success"),
-                classes="prow",
+                Widget(
+                    Select(choices, id="chats_sess", prompt="Session"),
+                    Select(_KIND_LABELS, value="all", id="chats_kind"),
+                    Static("Fetched chats: 0", id="chats_status"),
+                    classes="prow",
+                ),
+                Widget(
+                    Input(placeholder="Output (default: exported_chats)", id="chats_out"),
+                    Input(placeholder="History limit (blank = all)", id="chats_limit"),
+                    classes="prow",
+                ),
+                Widget(
+                    Button("Fetch Chats", id="btn_fetch_chats", variant="primary"),
+                    Button("All", id="btn_select_all_chats"),
+                    Button("Clear", id="btn_clear_chats"),
+                    Button("Export Selected JSON", id="btn_export_chats", variant="success"),
+                    Button("Parse Users", id="btn_parse_chats", variant="success"),
+                    classes="prow",
+                ),
+                id="chats_controls",
             )
         )
-        pane.mount(Static("", id="chats_status"))
         pane.mount(DataTable(id="chats_table", cursor_type="row", zebra_stripes=True))
 
     def _init_chats_table(self) -> None:
@@ -234,7 +239,8 @@ class ParsingTab(Widget):
                 tbl.update_cell(ref, "sel", "●" if ref in self._selected_chats else "○")
         with contextlib.suppress(Exception):
             self.query_one("#chats_status", Static).update(
-                f"[dim]Selected: {len(self._selected_chats)} / {len(self._fetched_dialogs)}[/dim]"
+                f"Fetched chats: {len(self._fetched_dialogs)}  "
+                f"Selected: {len(self._selected_chats)}"
             )
 
     def _select_all_chats(self) -> None:
@@ -280,26 +286,20 @@ class ParsingTab(Widget):
             self.query_one("#btn_fetch_chats", Button).disabled = False
 
     def _selected_chat_refs(self) -> list[str]:
-        if self._selected_chats:
-            return list(self._selected_chats)
-        entered = _split_refs(self.query_one("#chats_selected", Input).value)
-        if entered:
-            return entered
-        return []
+        return list(self._selected_chats)
 
     async def _do_export_chats(self) -> None:
         session = _get_session(self, "#chats_sess")
         chats = self._selected_chat_refs()
         if not session or not chats:
-            self.app.notify("Select a session and fetch or enter chats", severity="warning")
+            self.app.notify("Select a session and choose chats from the table", severity="warning")
             return
 
         limit_raw = self.query_one("#chats_limit", Input).value.strip()
         limit = int(limit_raw) if limit_raw.isdigit() else 0
         out_raw = self.query_one("#chats_out", Input).value.strip()
         dest_dir = Path(out_raw or "exported_chats")
-        media_raw = self.query_one("#chats_media", Input).value.strip()
-        media_dir = Path(media_raw or "media")
+        media_dir = dest_dir / "media"
         status = self.query_one("#chats_status", Static)
         button = self.query_one("#btn_export_chats", Button)
         button.disabled = True
@@ -328,7 +328,7 @@ class ParsingTab(Widget):
         session = _get_session(self, "#chats_sess")
         chats = self._selected_chat_refs()
         if not session or not chats:
-            self.app.notify("Select a session and fetch or enter chats", severity="warning")
+            self.app.notify("Select a session and choose chats from the table", severity="warning")
             return
 
         dest = Path("parsed_users.json")
