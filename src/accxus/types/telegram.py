@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -45,7 +46,7 @@ class ParsedUser(BaseModel):
     bio: str = ""
     song: str = ""
     birthday: str = ""
-    gifts: list[str] = Field(default_factory=list)
+    gifts: list[dict[str, Any]] = Field(default_factory=list)
     source_chat_id: int | None = None
     source_chat_title: str = ""
     source_chat_username: str = ""
