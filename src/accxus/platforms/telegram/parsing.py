@@ -597,7 +597,7 @@ async def save_chats_members(
 async def list_dialogs(
     session_name: str,
     kind: str = "all",
-    limit: int = 200,
+    limit: int = 0,
 ) -> list[dict[str, Any]]:
     from pyrogram.enums import ChatType  # type: ignore[import-untyped]
 

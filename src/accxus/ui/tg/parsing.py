@@ -108,6 +108,10 @@ class ParsingTab(Widget):
     .prow Select { width: 28; margin-right: 1; }
     .prow Static { width: 28; margin-right: 1; height: 3; content-align: left middle; }
     .prow Button { margin-right: 1; }
+    .cfield { height: auto; margin-bottom: 1; }
+    .cfield Label { height: 1; margin-bottom: 0; }
+    .cfield Input { width: 52; margin-bottom: 0; }
+    .cfield Select { width: 52; margin-bottom: 0; }
     .plog { height: 12; margin-top: 1; }
     #groups_table { height: 10; margin-bottom: 1; }
     #chats_pane { overflow: hidden; }
@@ -126,12 +130,20 @@ class ParsingTab(Widget):
         with TabbedContent():
             with TabPane("Chats", id="tp_chats"), Widget(classes="pform", id="chats_pane"):
                 with Widget(id="chats_controls"):
-                    with Widget(classes="prow"):
+                    with Widget(classes="cfield"):
+                        yield Label("Session")
                         yield Select(choices, id="chats_sess", prompt="Session")
+                    with Widget(classes="cfield"):
+                        yield Label("Type")
                         yield Select(_KIND_LABELS, value="all", id="chats_kind")
-                        yield Static("Fetched chats: 0", id="chats_status")
-                    with Widget(classes="prow"):
+                    with Widget(classes="cfield"):
+                        yield Label("Fetched chats")
+                        yield Static("0 selected: 0", id="chats_status")
+                    with Widget(classes="cfield"):
+                        yield Label("Output")
                         yield Input(placeholder="Output (default: exported_chats)", id="chats_out")
+                    with Widget(classes="cfield"):
+                        yield Label("History limit")
                         yield Input(placeholder="History limit (blank = all)", id="chats_limit")
                     with Widget(classes="prow"):
                         yield Button("Fetch Chats", id="btn_fetch_chats", variant="primary")
@@ -196,15 +208,29 @@ class ParsingTab(Widget):
         pane.mount(
             Widget(
                 Widget(
+                    Label("Session"),
                     Select(choices, id="chats_sess", prompt="Session"),
-                    Select(_KIND_LABELS, value="all", id="chats_kind"),
-                    Static("Fetched chats: 0", id="chats_status"),
-                    classes="prow",
+                    classes="cfield",
                 ),
                 Widget(
+                    Label("Type"),
+                    Select(_KIND_LABELS, value="all", id="chats_kind"),
+                    classes="cfield",
+                ),
+                Widget(
+                    Label("Fetched chats"),
+                    Static("0 selected: 0", id="chats_status"),
+                    classes="cfield",
+                ),
+                Widget(
+                    Label("Output"),
                     Input(placeholder="Output (default: exported_chats)", id="chats_out"),
+                    classes="cfield",
+                ),
+                Widget(
+                    Label("History limit"),
                     Input(placeholder="History limit (blank = all)", id="chats_limit"),
-                    classes="prow",
+                    classes="cfield",
                 ),
                 Widget(
                     Button("Fetch Chats", id="btn_fetch_chats", variant="primary"),
@@ -239,8 +265,7 @@ class ParsingTab(Widget):
                 tbl.update_cell(ref, "sel", "●" if ref in self._selected_chats else "○")
         with contextlib.suppress(Exception):
             self.query_one("#chats_status", Static).update(
-                f"Fetched chats: {len(self._fetched_dialogs)}  "
-                f"Selected: {len(self._selected_chats)}"
+                f"{len(self._fetched_dialogs)} selected: {len(self._selected_chats)}"
             )
 
     def _select_all_chats(self) -> None:
@@ -267,7 +292,7 @@ class ParsingTab(Widget):
         self._selected_chats.clear()
 
         try:
-            dialogs = await tg_parsing.list_dialogs(session, kind=kind)
+            dialogs = await tg_parsing.list_dialogs(session, kind=kind, limit=0)
             self._fetched_dialogs = dialogs
             tbl = self.query_one("#chats_table", DataTable)
             for d in dialogs:
