@@ -26,6 +26,7 @@ class SessionInfo(BaseModel):
     last_name: str = ""
     username: str = ""
     bio: str = ""
+    dc_id: int | None = None
     kind: SessionKind = SessionKind.PYROGRAM
     status: SessionStatus = SessionStatus.UNKNOWN
 
