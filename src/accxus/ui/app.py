@@ -205,7 +205,9 @@ def _build_app() -> RigiApp:
             for s in sessions:
                 color = "green" if s.status.value == "valid" else "red"
                 name_part = f"[cyan]{s.name}[/cyan]"
-                phone_part = f"[dim]{s.phone or '?'} · @{s.username or '—'}[/dim]"
+                phone_part = (
+                    f"[dim]{s.phone or '?'} · @{s.username or '—'} · DC {s.dc_id or '—'}[/dim]"
+                )
                 _write(app, f"  [{color}]●[/{color}] {name_part}  {phone_part}")
 
         elif action == "check":

@@ -187,6 +187,7 @@ class LoginScreen(ModalScreen[str | None]):
                 first_name=me.first_name or "",
                 last_name=me.last_name or "",
                 username=me.username or "",
+                dc_id=await self._client.storage.dc_id(),
             )
             tg_sessions.update_metadata(self._name, info)
             await self._client.disconnect()
@@ -497,10 +498,13 @@ class SessionsTab(Widget):
         tbl.clear(columns=True)
         tbl.add_column("Session", key="name")
         tbl.add_column("Phone", key="phone")
+        tbl.add_column("DC", key="dc")
         tbl.add_column("Status", key="status")
         for info in tg_sessions.list_sessions():
             status_str = self._status_markup(info.status)
-            tbl.add_row(info.name, info.phone or "—", status_str, key=info.name)
+            tbl.add_row(
+                info.name, info.phone or "—", str(info.dc_id or "—"), status_str, key=info.name
+            )
 
     @staticmethod
     def _status_markup(s: SessionStatus) -> str:
@@ -598,6 +602,7 @@ class SessionsTab(Widget):
                 f"[bold]{info.first_name} {info.last_name}[/bold]  "
                 f"{'@' + info.username if info.username else ''}\n"
                 f"[dim]Phone:[/dim]   {info.phone or '—'}\n"
+                f"[dim]DC:[/dim]      {info.dc_id or '—'}\n"
                 f"[dim]Bio:[/dim]     {info.bio or '—'}\n"
                 f"[dim]Session:[/dim] {name}.session  {kind_label}"
             )
@@ -619,11 +624,12 @@ class SessionsTab(Widget):
         names = [s.name for s in sessions]
         results = await tg_client.check_all_validity(names)
 
-        meta = tg_sessions.load_metadata()
+        tg_sessions.update_metadata_statuses(results)
+        sessions_by_name = {info.name: info for info in tg_sessions.list_sessions()}
         for name, status in results.items():
-            meta.setdefault(name, {})["status"] = status.value
             tbl.update_cell(name, "status", self._status_markup(status))
-        tg_sessions.save_metadata(meta)
+            if name in sessions_by_name:
+                tbl.update_cell(name, "dc", str(sessions_by_name[name].dc_id or "—"))
         valid = sum(1 for s in results.values() if s == SessionStatus.VALID)
         self.app.notify(f"✓ {valid}/{len(results)} valid", title=" Sessions")
 
