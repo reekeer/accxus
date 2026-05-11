@@ -86,6 +86,13 @@ def _split_refs(value: str) -> list[str]:
     return refs
 
 
+def _dialog_ref(dialog: dict[str, Any]) -> str:
+    username = str(dialog.get("username") or "")
+    if username:
+        return f"@{username}"
+    return str(dialog["id"])
+
+
 class ParsingTab(Widget):
     DEFAULT_CSS = """
     ParsingTab { height: 100%; width: 100%; }
@@ -108,16 +115,19 @@ class ParsingTab(Widget):
         super().__init__()
         self._parsed_users: list[Any] = []
         self._fetched_dialogs: list[dict[str, Any]] = []
+        self._selected_chats: set[str] = set()
 
     def compose(self) -> ComposeResult:
         choices = _session_select_choices()
         with TabbedContent():
             with TabPane("Chats", id="tp_chats"), Widget(classes="pform", id="chats_pane"):
-                yield Label("[bold]Chat List[/bold]")
+                yield Label(
+                    "[bold]Selected Chats[/bold]\n[dim]Fetch, then click rows to toggle[/dim]"
+                )
                 yield Select(choices, id="chats_sess", prompt="Select session")
                 yield Select(_KIND_LABELS, value="all", id="chats_kind")
                 yield Input(
-                    placeholder="Selected chats: @chat, -100123 (blank = fetched)",
+                    placeholder="Manual chats fallback: @chat, @chat2",
                     id="chats_selected",
                 )
                 yield Input(placeholder="Output dir (default: exported_chats)", id="chats_out")
@@ -125,6 +135,8 @@ class ParsingTab(Widget):
                 yield Input(placeholder="History limit per chat (blank = all)", id="chats_limit")
                 with Widget(classes="prow"):
                     yield Button("Fetch Chats", id="btn_fetch_chats", variant="primary")
+                    yield Button("All", id="btn_select_all_chats")
+                    yield Button("Clear", id="btn_clear_chats")
                     yield Button("Export Selected JSON", id="btn_export_chats", variant="success")
                     yield Button("Parse Users", id="btn_parse_chats", variant="success")
                 yield Static("", id="chats_status")
@@ -180,20 +192,20 @@ class ParsingTab(Widget):
     def _build_chats_pane(self) -> None:
         pane = self.query_one("#chats_pane")
         choices = _session_select_choices()
-        pane.mount(Label("[bold]Chat List[/bold]"))
+        pane.mount(
+            Label("[bold]Selected Chats[/bold]\n[dim]Fetch, then click rows to toggle[/dim]")
+        )
         pane.mount(Select(choices, id="chats_sess", prompt="Select session"))
         pane.mount(Select(_KIND_LABELS, value="all", id="chats_kind"))
-        pane.mount(
-            Input(
-                placeholder="Selected chats: @chat, -100123 (blank = fetched)", id="chats_selected"
-            )
-        )
+        pane.mount(Input(placeholder="Manual chats fallback: @chat, @chat2", id="chats_selected"))
         pane.mount(Input(placeholder="Output dir (default: exported_chats)", id="chats_out"))
         pane.mount(Input(placeholder="Media dir (default: media)", id="chats_media"))
         pane.mount(Input(placeholder="History limit per chat (blank = all)", id="chats_limit"))
         pane.mount(
             Widget(
                 Button("Fetch Chats", id="btn_fetch_chats", variant="primary"),
+                Button("All", id="btn_select_all_chats"),
+                Button("Clear", id="btn_clear_chats"),
                 Button("Export Selected JSON", id="btn_export_chats", variant="success"),
                 Button("Parse Users", id="btn_parse_chats", variant="success"),
                 classes="prow",
@@ -205,11 +217,33 @@ class ParsingTab(Widget):
     def _init_chats_table(self) -> None:
         tbl = self.query_one("#chats_table", DataTable)
         tbl.clear(columns=True)
+        tbl.add_column("", key="sel")
         tbl.add_column("", key="kind")
         tbl.add_column("Title", key="title")
         tbl.add_column("@Username", key="uname")
         tbl.add_column("ID", key="chat_id")
         tbl.add_column("Unread", key="unread")
+
+    def _sync_selected_chats(self) -> None:
+        tbl = self.query_one("#chats_table", DataTable)
+        available = {_dialog_ref(dialog) for dialog in self._fetched_dialogs}
+        self._selected_chats.intersection_update(available)
+        for dialog in self._fetched_dialogs:
+            ref = _dialog_ref(dialog)
+            with contextlib.suppress(Exception):
+                tbl.update_cell(ref, "sel", "●" if ref in self._selected_chats else "○")
+        with contextlib.suppress(Exception):
+            self.query_one("#chats_status", Static).update(
+                f"[dim]Selected: {len(self._selected_chats)} / {len(self._fetched_dialogs)}[/dim]"
+            )
+
+    def _select_all_chats(self) -> None:
+        self._selected_chats = {_dialog_ref(dialog) for dialog in self._fetched_dialogs}
+        self._sync_selected_chats()
+
+    def _clear_selected_chats(self) -> None:
+        self._selected_chats.clear()
+        self._sync_selected_chats()
 
     async def _do_fetch_chats(self) -> None:
         session = _get_session(self, "#chats_sess")
@@ -224,17 +258,20 @@ class ParsingTab(Widget):
         self.query_one("#btn_fetch_chats", Button).disabled = True
         status.update("[dim]Fetching chats…[/dim]")
         self._init_chats_table()
+        self._selected_chats.clear()
 
         try:
             dialogs = await tg_parsing.list_dialogs(session, kind=kind)
             self._fetched_dialogs = dialogs
             tbl = self.query_one("#chats_table", DataTable)
             for d in dialogs:
+                ref = _dialog_ref(d)
                 icon = _KIND_ICONS.get(d["kind"], "❓")
                 uname = f"@{d['username']}" if d["username"] else "—"
                 unread = str(d["unread"]) if d["unread"] else "·"
-                tbl.add_row(icon, d["title"], uname, str(d["id"]), unread)
-            status.update(f"✅ {len(dialogs)} chats fetched")
+                tbl.add_row("○", icon, d["title"], uname, str(d["id"]), unread, key=ref)
+            self._select_all_chats()
+            status.update(f"✅ {len(dialogs)} chats fetched; selected all")
             log.info("fetched %d dialogs from session %s (filter=%s)", len(dialogs), session, kind)
         except Exception as e:
             status.update(f"❌ {e}")
@@ -243,13 +280,12 @@ class ParsingTab(Widget):
             self.query_one("#btn_fetch_chats", Button).disabled = False
 
     def _selected_chat_refs(self) -> list[str]:
+        if self._selected_chats:
+            return list(self._selected_chats)
         entered = _split_refs(self.query_one("#chats_selected", Input).value)
         if entered:
             return entered
-        return [
-            f"@{d['username']}" if d.get("username") else str(d["id"])
-            for d in self._fetched_dialogs
-        ]
+        return []
 
     async def _do_export_chats(self) -> None:
         session = _get_session(self, "#chats_sess")
@@ -409,6 +445,10 @@ class ParsingTab(Widget):
         bid = event.button.id
         if bid == "btn_fetch_chats":
             await self._do_fetch_chats()
+        elif bid == "btn_select_all_chats":
+            self._select_all_chats()
+        elif bid == "btn_clear_chats":
+            self._clear_selected_chats()
         elif bid == "btn_export_chats":
             await self._do_export_chats()
         elif bid == "btn_parse_chats":
@@ -433,6 +473,18 @@ class ParsingTab(Widget):
             await self._do_snapshot()
         elif bid == "btn_prof_history":
             self._show_profile_history()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        if event.data_table.id != "chats_table":
+            return
+        key = str(event.row_key.value) if event.row_key.value is not None else ""
+        if not key:
+            return
+        if key in self._selected_chats:
+            self._selected_chats.discard(key)
+        else:
+            self._selected_chats.add(key)
+        self._sync_selected_chats()
 
     async def _do_export(self, fmt: str) -> None:
         session = _get_session(self, "#exp_sess")
