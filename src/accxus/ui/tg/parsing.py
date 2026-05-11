@@ -90,6 +90,8 @@ class ParsingTab(Widget):
     DEFAULT_CSS = """
     ParsingTab { height: 100%; width: 100%; }
     ParsingTab TabbedContent { height: 1fr; }
+    ParsingTab ContentSwitcher { height: 1fr; }
+    ParsingTab TabPane { height: 1fr; }
     .pform { padding: 1 2; height: 100%; overflow-y: auto; }
     .pform Label { margin-bottom: 1; }
     .pform Input { margin-bottom: 1; width: 44; }
