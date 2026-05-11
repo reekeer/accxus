@@ -12,6 +12,8 @@ from accxus.types.telegram import ParsedUser
 
 log = logging.getLogger(__name__)
 
+ChatRef = int | str
+
 
 def _clean_filename(value: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in value)
@@ -23,6 +25,35 @@ def _chat_ref(chat: dict[str, Any]) -> str:
     if username:
         return f"@{username}"
     return str(chat["id"])
+
+
+def _normalize_chat_ref(chat: ChatRef) -> ChatRef:
+    if isinstance(chat, int):
+        return chat
+    value = chat.strip()
+    if value.lstrip("-").isdigit():
+        return int(value)
+    return value
+
+
+async def _resolve_chat_ref(client: Any, chat: ChatRef) -> ChatRef:
+    ref = _normalize_chat_ref(chat)
+    with contextlib.suppress(Exception):
+        resolved = await client.get_chat(ref)
+        return resolved.id
+
+    wanted_id = ref if isinstance(ref, int) else None
+    wanted_text = str(ref).lstrip("@").lower() if isinstance(ref, str) else ""
+    async for dialog in client.get_dialogs(limit=0):  # type: ignore[reportGeneralTypeIssues]
+        dialog_chat = dialog.chat
+        if wanted_id is not None and dialog_chat.id == wanted_id:
+            return dialog_chat.id
+        username = (getattr(dialog_chat, "username", "") or "").lower()
+        title = (getattr(dialog_chat, "title", "") or "").lower()
+        if wanted_text and wanted_text in {username, title}:
+            return dialog_chat.id
+
+    return ref
 
 
 def _format_optional(value: Any) -> str:
@@ -305,14 +336,15 @@ async def _message_to_dict(client: Any, msg: Any, media_dir: Path | None) -> dic
 
 async def export_chat_history(
     session_name: str,
-    chat: str,
+    chat: ChatRef,
     limit: int = 0,
     on_progress: Callable[[int], None] | None = None,
     media_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     async with connected(session_name) as client:
-        async for msg in client.get_chat_history(chat, limit=limit or 0):  # type: ignore[reportGeneralTypeIssues]
+        resolved_chat = await _resolve_chat_ref(client, chat)
+        async for msg in client.get_chat_history(resolved_chat, limit=limit or 0):  # type: ignore[reportGeneralTypeIssues]
             messages.append(await _message_to_dict(client, msg, media_dir))
             if on_progress and len(messages) % 100 == 0:
                 on_progress(len(messages))
@@ -321,7 +353,7 @@ async def export_chat_history(
 
 async def save_chat_history(
     session_name: str,
-    chat: str,
+    chat: ChatRef,
     dest: Path,
     fmt: str = "json",
     limit: int = 0,
@@ -341,7 +373,7 @@ async def save_chat_history(
 
 async def save_chats_history(
     session_name: str,
-    chats: list[str],
+    chats: list[ChatRef],
     dest_dir: Path,
     fmt: str = "json",
     limit: int = 0,
@@ -352,15 +384,15 @@ async def save_chats_history(
     exported: dict[str, int] = {}
 
     for chat in chats:
-        chat_key = _clean_filename(chat.lstrip("@"))
+        chat_key = _clean_filename(str(chat).lstrip("@"))
 
-        def _progress(count: int, chat_ref: str = chat) -> None:
+        def _progress(count: int, chat_ref: ChatRef = chat) -> None:
             if on_progress:
-                on_progress(chat_ref, count)
+                on_progress(str(chat_ref), count)
 
         dest = dest_dir / f"{chat_key}.{fmt}"
         chat_media_dir = media_dir / chat_key if media_dir else None
-        exported[chat] = await save_chat_history(
+        exported[str(chat)] = await save_chat_history(
             session_name,
             chat,
             dest,
@@ -379,7 +411,7 @@ async def save_all_dialog_histories(
     dest_dir: Path,
     *,
     kind: str = "all",
-    selected_chats: list[str] | None = None,
+    selected_chats: list[ChatRef] | None = None,
     fmt: str = "json",
     limit: int = 0,
     on_progress: Callable[[str, int], None] | None = None,
@@ -487,13 +519,14 @@ async def _parsed_user_from_member(
 
 async def parse_chat_members(
     session_name: str,
-    chat: str,
+    chat: ChatRef,
     on_progress: Callable[[int], None] | None = None,
     avatar_dir: Path | None = None,
 ) -> list[ParsedUser]:
     users: list[ParsedUser] = []
     async with connected(session_name) as client:
-        chat_obj = await client.get_chat(chat)
+        resolved_chat = await _resolve_chat_ref(client, chat)
+        chat_obj = await client.get_chat(resolved_chat)
         chat_info = {
             "id": chat_obj.id,
             "title": (
@@ -510,7 +543,7 @@ async def parse_chat_members(
             ),
             "username": getattr(chat_obj, "username", "") or "",
         }
-        async for member in client.get_chat_members(chat):  # type: ignore[reportGeneralTypeIssues]
+        async for member in client.get_chat_members(resolved_chat):  # type: ignore[reportGeneralTypeIssues]
             users.append(
                 await _parsed_user_from_member(
                     client,
@@ -527,7 +560,7 @@ async def parse_chat_members(
 
 async def parse_chats_members(
     session_name: str,
-    chats: list[str],
+    chats: list[ChatRef],
     *,
     avatar_dir: Path | None = None,
     on_progress: Callable[[str, int], None] | None = None,
@@ -535,7 +568,8 @@ async def parse_chats_members(
     users_by_id: dict[int, ParsedUser] = {}
     async with connected(session_name) as client:
         for chat in chats:
-            chat_obj = await client.get_chat(chat)
+            resolved_chat = await _resolve_chat_ref(client, chat)
+            chat_obj = await client.get_chat(resolved_chat)
             chat_info = {
                 "id": chat_obj.id,
                 "title": (
@@ -553,7 +587,7 @@ async def parse_chats_members(
                 "username": getattr(chat_obj, "username", "") or "",
             }
             count = 0
-            async for member in client.get_chat_members(chat):  # type: ignore[reportGeneralTypeIssues]
+            async for member in client.get_chat_members(resolved_chat):  # type: ignore[reportGeneralTypeIssues]
                 parsed = await _parsed_user_from_member(
                     client,
                     member,
@@ -564,9 +598,9 @@ async def parse_chats_members(
                     users_by_id[parsed.id] = parsed
                 count += 1
                 if on_progress and count % 50 == 0:
-                    on_progress(chat, count)
+                    on_progress(str(chat), count)
             if on_progress:
-                on_progress(chat, count)
+                on_progress(str(chat), count)
 
     users = list(users_by_id.values())
     log.info("[parse] parsed %d unique members from %d chats", len(users), len(chats))
@@ -575,7 +609,7 @@ async def parse_chats_members(
 
 async def save_chats_members(
     session_name: str,
-    chats: list[str],
+    chats: list[ChatRef],
     dest: Path,
     *,
     avatar_dir: Path | None = None,
