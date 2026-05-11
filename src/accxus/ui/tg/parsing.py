@@ -121,6 +121,7 @@ class ParsingTab(Widget):
                     id="chats_selected",
                 )
                 yield Input(placeholder="Output dir (default: exported_chats)", id="chats_out")
+                yield Input(placeholder="Media dir (default: media)", id="chats_media")
                 yield Input(placeholder="History limit per chat (blank = all)", id="chats_limit")
                 with Widget(classes="prow"):
                     yield Button("Fetch Chats", id="btn_fetch_chats", variant="primary")
@@ -133,6 +134,7 @@ class ParsingTab(Widget):
                 yield Select(choices, id="exp_sess", prompt="Select session")
                 yield Input(placeholder="Chat: @group / username / ID", id="exp_chat")
                 yield Input(placeholder="Output file  (default: export_<chat>.json)", id="exp_out")
+                yield Input(placeholder="Media dir (blank = no media download)", id="exp_media")
                 yield Input(placeholder="Limit (blank = all)", id="exp_limit")
                 with Widget(classes="prow"):
                     yield Button("Export JSON", id="btn_exp_json", variant="success")
@@ -187,6 +189,7 @@ class ParsingTab(Widget):
             )
         )
         pane.mount(Input(placeholder="Output dir (default: exported_chats)", id="chats_out"))
+        pane.mount(Input(placeholder="Media dir (default: media)", id="chats_media"))
         pane.mount(Input(placeholder="History limit per chat (blank = all)", id="chats_limit"))
         pane.mount(
             Widget(
@@ -259,6 +262,8 @@ class ParsingTab(Widget):
         limit = int(limit_raw) if limit_raw.isdigit() else 0
         out_raw = self.query_one("#chats_out", Input).value.strip()
         dest_dir = Path(out_raw or "exported_chats")
+        media_raw = self.query_one("#chats_media", Input).value.strip()
+        media_dir = Path(media_raw or "media")
         status = self.query_one("#chats_status", Static)
         button = self.query_one("#btn_export_chats", Button)
         button.disabled = True
@@ -274,8 +279,9 @@ class ParsingTab(Widget):
                 fmt="json",
                 limit=limit,
                 on_progress=_prog,
+                media_dir=media_dir,
             )
-            status.update(f"✅ Exported {len(exported)} chats → {dest_dir}")
+            status.update(f"✅ Exported {len(exported)} chats → {dest_dir}; media → {media_dir}")
         except Exception as e:
             status.update(f"❌ {e}")
             log.error("bulk chat export error: %s", e)
@@ -320,6 +326,7 @@ class ParsingTab(Widget):
         pane.mount(Select(choices, id="exp_sess", prompt="Select session"))
         pane.mount(Input(placeholder="Chat: @group / username / ID", id="exp_chat"))
         pane.mount(Input(placeholder="Output file  (default: export_<chat>.json)", id="exp_out"))
+        pane.mount(Input(placeholder="Media dir (blank = no media download)", id="exp_media"))
         pane.mount(Input(placeholder="Limit (blank = all)", id="exp_limit"))
         pane.mount(
             Widget(
@@ -436,8 +443,10 @@ class ParsingTab(Widget):
 
         limit_raw = self.query_one("#exp_limit", Input).value.strip()
         out_raw = self.query_one("#exp_out", Input).value.strip()
+        media_raw = self.query_one("#exp_media", Input).value.strip()
         limit = int(limit_raw) if limit_raw.isdigit() else 0
         dest = Path(out_raw or f"export_{chat.lstrip('@')}.{fmt}")
+        media_dir = Path(media_raw) if media_raw else None
         status = self.query_one("#exp_status", Static)
         log_view = self.query_one("#export_log", RichLog)
 
@@ -450,10 +459,17 @@ class ParsingTab(Widget):
 
         try:
             count = await tg_parsing.save_chat_history(
-                session, chat, dest, fmt=fmt, limit=limit, on_progress=_prog
+                session,
+                chat,
+                dest,
+                fmt=fmt,
+                limit=limit,
+                on_progress=_prog,
+                media_dir=media_dir,
             )
-            status.update(f"✅ {count} messages → {dest}")
-            log_view.write(f"✅ Export complete: {dest}  ({count} messages)")
+            media_note = f"; media → {media_dir}" if media_dir else ""
+            status.update(f"✅ {count} messages → {dest}{media_note}")
+            log_view.write(f"✅ Export complete: {dest}  ({count} messages){media_note}")
             log.info("export done: %s messages from %s -> %s", count, chat, dest)
         except Exception as e:
             status.update(f"❌ {e}")
@@ -599,6 +615,9 @@ class ParsingTab(Widget):
                 f"✅ Snapshot: "
                 f"{info['first_name']} {info['last_name']}  "
                 f"@{info['username'] or '—'}  "
+                f"birthday:{info.get('birthday') or '—'}  "
+                f"song:{info.get('song') or '—'}  "
+                f"gifts:{len(info.get('gifts') or [])}  "
                 f"[dim]{info['timestamp']}[/dim]"
             )
             log.info("snapshot saved for %s", user_id)
@@ -622,5 +641,8 @@ class ParsingTab(Widget):
                 f"  [dim]{s['timestamp']}[/dim]  "
                 f"{s.get('first_name','')} {s.get('last_name','')}  "
                 f"@{s.get('username') or '—'}  "
+                f"[dim]birthday:[/dim] {s.get('birthday') or '—'}  "
+                f"[dim]song:[/dim] {s.get('song') or '—'}  "
+                f"[dim]gifts:[/dim] {len(s.get('gifts') or [])}  "
                 f"[dim]bio:[/dim] {s.get('bio') or '—'}"
             )
