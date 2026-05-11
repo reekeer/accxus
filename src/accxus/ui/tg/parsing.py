@@ -77,6 +77,15 @@ def _get_session(widget: Widget, sel_id: str) -> str | None:
     return val
 
 
+def _split_refs(value: str) -> list[str]:
+    refs: list[str] = []
+    for chunk in value.replace("\n", ",").split(","):
+        ref = chunk.strip()
+        if ref:
+            refs.append(ref)
+    return refs
+
+
 class ParsingTab(Widget):
     DEFAULT_CSS = """
     ParsingTab { height: 100%; width: 100%; }
@@ -105,8 +114,16 @@ class ParsingTab(Widget):
                 yield Label("[bold]Chat List[/bold]")
                 yield Select(choices, id="chats_sess", prompt="Select session")
                 yield Select(_KIND_LABELS, value="all", id="chats_kind")
+                yield Input(
+                    placeholder="Selected chats: @chat, -100123 (blank = fetched)",
+                    id="chats_selected",
+                )
+                yield Input(placeholder="Output dir (default: exported_chats)", id="chats_out")
+                yield Input(placeholder="History limit per chat (blank = all)", id="chats_limit")
                 with Widget(classes="prow"):
                     yield Button("Fetch Chats", id="btn_fetch_chats", variant="primary")
+                    yield Button("Export Selected JSON", id="btn_export_chats", variant="success")
+                    yield Button("Parse Users", id="btn_parse_chats", variant="success")
                 yield Static("", id="chats_status")
                 yield DataTable(id="chats_table", cursor_type="row", zebra_stripes=True)
             with TabPane("Export Chat", id="tp_export"), Widget(classes="pform", id="export_pane"):
@@ -123,9 +140,12 @@ class ParsingTab(Widget):
             with TabPane("Parse Users", id="tp_parse"), Widget(classes="pform", id="parse_pane"):
                 yield Label("[bold]Parse Group Members[/bold]")
                 yield Select(choices, id="pu_sess", prompt="Select session")
-                yield Input(placeholder="Group: @group / username / ID", id="pu_chat")
+                yield Input(placeholder="Groups: @group, @group2 / IDs", id="pu_chat")
+                yield Input(placeholder="Output JSON (default: parsed_users.json)", id="pu_out")
+                yield Input(placeholder="Avatar dir (default: parsed_avatars)", id="pu_avatars")
                 with Widget(classes="prow"):
                     yield Button("Parse", id="btn_parse", variant="success")
+                    yield Button("Parse + Save JSON", id="btn_parse_save", variant="primary")
                 yield Static("", id="pu_status")
                 yield Label("[dim]Save parsed users to a group:[/dim]")
                 with Widget(classes="prow"):
@@ -160,8 +180,17 @@ class ParsingTab(Widget):
         pane.mount(Select(choices, id="chats_sess", prompt="Select session"))
         pane.mount(Select(_KIND_LABELS, value="all", id="chats_kind"))
         pane.mount(
+            Input(
+                placeholder="Selected chats: @chat, -100123 (blank = fetched)", id="chats_selected"
+            )
+        )
+        pane.mount(Input(placeholder="Output dir (default: exported_chats)", id="chats_out"))
+        pane.mount(Input(placeholder="History limit per chat (blank = all)", id="chats_limit"))
+        pane.mount(
             Widget(
                 Button("Fetch Chats", id="btn_fetch_chats", variant="primary"),
+                Button("Export Selected JSON", id="btn_export_chats", variant="success"),
+                Button("Parse Users", id="btn_parse_chats", variant="success"),
                 classes="prow",
             )
         )
@@ -208,6 +237,80 @@ class ParsingTab(Widget):
         finally:
             self.query_one("#btn_fetch_chats", Button).disabled = False
 
+    def _selected_chat_refs(self) -> list[str]:
+        entered = _split_refs(self.query_one("#chats_selected", Input).value)
+        if entered:
+            return entered
+        return [
+            f"@{d['username']}" if d.get("username") else str(d["id"])
+            for d in self._fetched_dialogs
+        ]
+
+    async def _do_export_chats(self) -> None:
+        session = _get_session(self, "#chats_sess")
+        chats = self._selected_chat_refs()
+        if not session or not chats:
+            self.app.notify("Select a session and fetch or enter chats", severity="warning")
+            return
+
+        limit_raw = self.query_one("#chats_limit", Input).value.strip()
+        limit = int(limit_raw) if limit_raw.isdigit() else 0
+        out_raw = self.query_one("#chats_out", Input).value.strip()
+        dest_dir = Path(out_raw or "exported_chats")
+        status = self.query_one("#chats_status", Static)
+        button = self.query_one("#btn_export_chats", Button)
+        button.disabled = True
+
+        def _prog(chat: str, count: int) -> None:
+            status.update(f"[dim]{chat}: exported {count} messages…[/dim]")
+
+        try:
+            exported = await tg_parsing.save_chats_history(
+                session,
+                chats,
+                dest_dir,
+                fmt="json",
+                limit=limit,
+                on_progress=_prog,
+            )
+            status.update(f"✅ Exported {len(exported)} chats → {dest_dir}")
+        except Exception as e:
+            status.update(f"❌ {e}")
+            log.error("bulk chat export error: %s", e)
+        finally:
+            button.disabled = False
+
+    async def _do_parse_chats_from_list(self) -> None:
+        session = _get_session(self, "#chats_sess")
+        chats = self._selected_chat_refs()
+        if not session or not chats:
+            self.app.notify("Select a session and fetch or enter chats", severity="warning")
+            return
+
+        dest = Path("parsed_users.json")
+        avatar_dir = Path("parsed_avatars")
+        status = self.query_one("#chats_status", Static)
+        button = self.query_one("#btn_parse_chats", Button)
+        button.disabled = True
+
+        def _prog(chat: str, count: int) -> None:
+            status.update(f"[dim]{chat}: parsed {count} users…[/dim]")
+
+        try:
+            count = await tg_parsing.save_chats_members(
+                session,
+                chats,
+                dest,
+                avatar_dir=avatar_dir,
+                on_progress=_prog,
+            )
+            status.update(f"✅ Parsed {count} users → {dest}; avatars → {avatar_dir}")
+        except Exception as e:
+            status.update(f"❌ {e}")
+            log.error("bulk users parse error: %s", e)
+        finally:
+            button.disabled = False
+
     def _build_export_pane(self) -> None:
         pane = self.query_one("#export_pane")
         choices = _session_select_choices()
@@ -231,10 +334,13 @@ class ParsingTab(Widget):
         choices = _session_select_choices()
         pane.mount(Label("[bold]Parse Group Members[/bold]"))
         pane.mount(Select(choices, id="pu_sess", prompt="Select session"))
-        pane.mount(Input(placeholder="Group: @group / username / ID", id="pu_chat"))
+        pane.mount(Input(placeholder="Groups: @group, @group2 / IDs", id="pu_chat"))
+        pane.mount(Input(placeholder="Output JSON (default: parsed_users.json)", id="pu_out"))
+        pane.mount(Input(placeholder="Avatar dir (default: parsed_avatars)", id="pu_avatars"))
         pane.mount(
             Widget(
                 Button("Parse", id="btn_parse", variant="success"),
+                Button("Parse + Save JSON", id="btn_parse_save", variant="primary"),
                 classes="prow",
             )
         )
@@ -294,12 +400,18 @@ class ParsingTab(Widget):
         bid = event.button.id
         if bid == "btn_fetch_chats":
             await self._do_fetch_chats()
+        elif bid == "btn_export_chats":
+            await self._do_export_chats()
+        elif bid == "btn_parse_chats":
+            await self._do_parse_chats_from_list()
         elif bid == "btn_exp_json":
             await self._do_export("json")
         elif bid == "btn_exp_txt":
             await self._do_export("txt")
         elif bid == "btn_parse":
-            await self._do_parse()
+            await self._do_parse(save=False)
+        elif bid == "btn_parse_save":
+            await self._do_parse(save=True)
         elif bid == "btn_save_grp":
             self._save_group()
         elif bid == "btn_grp_refresh":
@@ -349,22 +461,30 @@ class ParsingTab(Widget):
             for bid in ("btn_exp_json", "btn_exp_txt"):
                 self.query_one(f"#{bid}", Button).disabled = False
 
-    async def _do_parse(self) -> None:
+    async def _do_parse(self, *, save: bool = False) -> None:
         session = _get_session(self, "#pu_sess")
-        chat = self.query_one("#pu_chat", Input).value.strip()
-        if not session or not chat:
-            self.app.notify("Select a session and enter a group", severity="warning")
+        chats = _split_refs(self.query_one("#pu_chat", Input).value)
+        if not session or not chats:
+            self.app.notify("Select a session and enter one or more groups", severity="warning")
             return
 
         status = self.query_one("#pu_status", Static)
         log_view = self.query_one("#parse_log", RichLog)
-        self.query_one("#btn_parse", Button).disabled = True
+        for bid in ("btn_parse", "btn_parse_save"):
+            self.query_one(f"#{bid}", Button).disabled = True
 
-        def _prog(n: int) -> None:
-            status.update(f"[dim]Parsed {n} users…[/dim]")
+        def _prog(chat: str, count: int) -> None:
+            status.update(f"[dim]{chat}: parsed {count} users…[/dim]")
 
         try:
-            users = await tg_parsing.parse_chat_members(session, chat, on_progress=_prog)
+            avatar_dir_raw = self.query_one("#pu_avatars", Input).value.strip()
+            avatar_dir = Path(avatar_dir_raw or "parsed_avatars")
+            users = await tg_parsing.parse_chats_members(
+                session,
+                chats,
+                avatar_dir=avatar_dir,
+                on_progress=_prog,
+            )
             self._parsed_users = [
                 {
                     "id": u.id,
@@ -372,19 +492,39 @@ class ParsingTab(Widget):
                     "first_name": u.first_name,
                     "last_name": u.last_name,
                     "phone": u.phone,
+                    "avatar_path": u.avatar_path,
+                    "bio": u.bio,
+                    "song": u.song,
+                    "birthday": u.birthday,
+                    "gifts": u.gifts,
+                    "source_chat_id": u.source_chat_id,
+                    "source_chat_title": u.source_chat_title,
+                    "source_chat_username": u.source_chat_username,
                 }
                 for u in users
             ]
-            status.update(f"✅ Parsed {len(users)} users")
-            log_view.write(f"✅ Parsed {len(users)} users from {chat!r}")
-            log.info("parsed %d users from %s", len(users), chat)
+            if save:
+                out_raw = self.query_one("#pu_out", Input).value.strip()
+                dest = Path(out_raw or "parsed_users.json")
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(
+                    json.dumps(self._parsed_users, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                status.update(f"✅ Parsed {len(users)} users → {dest}; avatars → {avatar_dir}")
+                log_view.write(f"✅ Parsed users saved: {dest} ({len(users)} users)")
+            else:
+                status.update(f"✅ Parsed {len(users)} users")
+                log_view.write(f"✅ Parsed {len(users)} users from {len(chats)} chats")
+            log.info("parsed %d users from %d chats", len(users), len(chats))
             self.query_one("#btn_save_grp", Button).disabled = False
         except Exception as e:
             status.update(f"❌ {e}")
             log_view.write(f"❌ Parse failed: {e}")
             log.error("parse error: %s", e)
         finally:
-            self.query_one("#btn_parse", Button).disabled = False
+            for bid in ("btn_parse", "btn_parse_save"):
+                self.query_one(f"#{bid}", Button).disabled = False
 
     def _save_group(self) -> None:
         gname = self.query_one("#pu_grp_name", Input).value.strip()
