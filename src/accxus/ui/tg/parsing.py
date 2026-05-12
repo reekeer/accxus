@@ -331,7 +331,7 @@ class ParsingTab(Widget):
         limit_raw = self.query_one("#chats_limit", Input).value.strip()
         limit = int(limit_raw) if limit_raw.isdigit() else 0
         out_raw = self.query_one("#chats_out", Input).value.strip()
-        dest_dir = Path(out_raw or "exported_chats")
+        dest_dir = Path(out_raw or "exported_chats").absolute()
         media_dir = dest_dir / "media"
         status = self.query_one("#chats_status", Static)
         button = self.query_one("#btn_export_chats", Button)
@@ -343,7 +343,7 @@ class ParsingTab(Widget):
         try:
             exported = await tg_parsing.save_chats_history(
                 session,
-                chats,
+                list(chats),  # type: ignore[arg-type]
                 dest_dir,
                 fmt="json",
                 limit=limit,
@@ -364,8 +364,8 @@ class ParsingTab(Widget):
             self.app.notify("Select a session and choose chats from the table", severity="warning")
             return
 
-        dest = Path("parsed_users.json")
-        avatar_dir = Path("parsed_avatars")
+        dest = Path("parsed_users.json").absolute()
+        avatar_dir = Path("parsed_avatars").absolute()
         status = self.query_one("#chats_status", Static)
         button = self.query_one("#btn_parse_chats", Button)
         button.disabled = True
@@ -376,7 +376,7 @@ class ParsingTab(Widget):
         try:
             count = await tg_parsing.save_chats_members(
                 session,
-                chats,
+                list(chats),  # type: ignore[arg-type]
                 dest,
                 avatar_dir=avatar_dir,
                 on_progress=_prog,
@@ -525,7 +525,9 @@ class ParsingTab(Widget):
         session = _get_session(self, "#exp_sess")
         chat = self.query_one("#exp_chat", Input).value.strip()
         if not session or not chat:
-            self.app.notify("Select a session and enter a chat to fetch senders", severity="warning")
+            self.app.notify(
+                "Select a session and enter a chat to fetch senders", severity="warning"
+            )
             return
 
         status = self.query_one("#exp_status", Static)
@@ -535,9 +537,9 @@ class ParsingTab(Widget):
             sel = self.query_one("#exp_sender", Select)
             choices = [("All Senders", "all")] + [(s["label"], str(s["id"])) for s in senders]
             if hasattr(sel, "set_options"):
-                sel.set_options(choices)  # type: ignore[attr-defined]
+                sel.set_options(choices)  # type: ignore[attr-defined,reportGeneralTypeIssues]
             else:
-                sel.options = choices  # type: ignore[attr-defined]
+                sel.options = choices  # type: ignore[attr-defined,reportGeneralTypeIssues]
             sel.value = "all"
             status.update(f"✅ Found {len(senders)} senders")
         except Exception as e:
@@ -555,13 +557,14 @@ class ParsingTab(Widget):
         out_raw = self.query_one("#exp_out", Input).value.strip()
         media_raw = self.query_one("#exp_media", Input).value.strip()
         limit = int(limit_raw) if limit_raw.isdigit() else 0
-        dest = Path(out_raw or f"export_{chat.lstrip('@')}.{fmt}")
-        media_dir = Path(media_raw) if media_raw else None
+        dest = Path(out_raw or f"export_{chat.lstrip('@')}.{fmt}").absolute()
+        media_dir = Path(media_raw).absolute() if media_raw else None
 
-        sender_id_raw = self.query_one("#exp_sender", Select).value
+        sender_val = self.query_one("#exp_sender", Select).value
         sender_ids = None
-        if sender_id_raw and sender_id_raw != "all":
-            sender_ids = [int(sender_id_raw)]
+        if sender_val and str(sender_val) != "all" and str(sender_val) != "Select.BLANK":
+            with contextlib.suppress(ValueError):
+                sender_ids = [int(str(sender_val))]
 
         status = self.query_one("#exp_status", Static)
         log_view = self.query_one("#export_log", RichLog)
@@ -613,10 +616,10 @@ class ParsingTab(Widget):
 
         try:
             avatar_dir_raw = self.query_one("#pu_avatars", Input).value.strip()
-            avatar_dir = Path(avatar_dir_raw or "parsed_avatars")
+            avatar_dir = Path(avatar_dir_raw or "parsed_avatars").absolute()
             users = await tg_parsing.parse_chats_members(
                 session,
-                chats,
+                list(chats),  # type: ignore[arg-type]
                 avatar_dir=avatar_dir,
                 on_progress=_prog,
             )
@@ -640,7 +643,7 @@ class ParsingTab(Widget):
             ]
             if save:
                 out_raw = self.query_one("#pu_out", Input).value.strip()
-                dest = Path(out_raw or "parsed_users.json")
+                dest = Path(out_raw or "parsed_users.json").absolute()
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text(
                     json.dumps(self._parsed_users, indent=2, ensure_ascii=False),

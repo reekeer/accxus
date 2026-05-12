@@ -79,14 +79,6 @@ def _enum_value(value: Any) -> str:
     return str(value)
 
 
-def _stringify_list(values: Any) -> list[str]:
-    if not values:
-        return []
-    if not isinstance(values, list | tuple):
-        values = [values]
-    return [_format_optional(v) for v in values if v is not None]
-
-
 def _serializable_value(value: Any, depth: int = 0) -> Any:
     if value is None or isinstance(value, str | int | float | bool):
         return value
@@ -306,12 +298,13 @@ def _media_suffix(msg: Any) -> str:
 async def _download_message_media(client: Any, msg: Any, media_dir: Path | None) -> str:
     if media_dir is None or not getattr(msg, "media", None):
         return ""
+    media_dir = media_dir.absolute()
     media_dir.mkdir(parents=True, exist_ok=True)
     media_type = _enum_value(msg.media)
     dest = media_dir / f"{media_type}{msg.id}{_media_suffix(msg)}"
     try:
         downloaded = await client.download_media(msg, file_name=str(dest))
-        return Path(str(downloaded or dest)).name
+        return str(downloaded or dest)
     except Exception as exc:
         log.debug("[parse] media download failed for message %s: %s", msg.id, exc)
         return ""
@@ -332,6 +325,7 @@ async def _download_custom_emojis(client: Any, msg: Any, media_dir: Path | None)
     ids = _custom_emoji_ids(msg)
     if media_dir is None or not ids:
         return []
+    media_dir = media_dir.absolute()
     media_dir.mkdir(parents=True, exist_ok=True)
     files: list[str] = []
     with contextlib.suppress(Exception):
@@ -341,7 +335,7 @@ async def _download_custom_emojis(client: Any, msg: Any, media_dir: Path | None)
             dest = media_dir / f"emoji{sticker.file_unique_id}{suffix}"
             try:
                 downloaded = await client.download_media(sticker.file_id, file_name=str(dest))
-                files.append(Path(str(downloaded or dest)).name)
+                files.append(str(downloaded or dest))
             except Exception as exc:
                 log.debug("[parse] custom emoji download failed: %s", exc)
     return files
@@ -377,7 +371,8 @@ async def get_chat_senders(
     senders: dict[int, dict[str, Any]] = {}
     async with connected(session_name) as client:
         resolved_chat = await _resolve_chat_ref(client, chat)
-        async for msg in client.get_chat_history(resolved_chat, limit=limit):
+        # Using type: ignore[attr-defined] if pyright complains about get_chat_history not being a method on Client
+        async for msg in client.get_chat_history(resolved_chat, limit=limit):  # type: ignore[attr-defined]
             u = msg.from_user
             if u:
                 if u.id not in senders:
@@ -432,7 +427,9 @@ async def save_chat_history(
     media_dir: Path | None = None,
     sender_ids: list[int] | None = None,
 ) -> int:
-    messages = await export_chat_history(session_name, chat, limit, on_progress, media_dir, sender_ids)
+    messages = await export_chat_history(
+        session_name, chat, limit, on_progress, media_dir, sender_ids
+    )
     dest.parent.mkdir(parents=True, exist_ok=True)
     if fmt == "txt":
         lines = [f"[{m['date']}] {m['from'] or 'unknown'}: {m['text']}" for m in messages]
@@ -511,6 +508,7 @@ async def _download_user_avatar(client: Any, user: Any, avatar_dir: Path | None)
     if not file_id:
         return ""
 
+    avatar_dir = avatar_dir.absolute()
     avatar_dir.mkdir(parents=True, exist_ok=True)
     dest = avatar_dir / f"{user.id}.jpg"
     try:
