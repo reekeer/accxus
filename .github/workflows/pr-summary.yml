@@ -1,0 +1,420 @@
+name: PR Summary
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  pr-summary:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate rich PR summary
+        id: summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+
+            const commits = await github.paginate(
+              github.rest.pulls.listCommits,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                per_page: 100
+              }
+            );
+
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                per_page: 100
+              }
+            );
+
+            const groups = {
+              feat: [],
+              fix: [],
+              refactor: [],
+              perf: [],
+              docs: [],
+              test: [],
+              chore: [],
+              ci: [],
+              build: [],
+              style: [],
+              revert: [],
+              other: []
+            };
+
+            const titles = {
+              feat: "✨ Features",
+              fix: "🐛 Fixes",
+              refactor: "♻️ Refactoring",
+              perf: "⚡ Performance",
+              docs: "📝 Documentation",
+              test: "🧪 Tests",
+              chore: "🔧 Chores",
+              ci: "🚀 CI",
+              build: "📦 Build",
+              style: "🎨 Style",
+              revert: "⏪ Reverts",
+              other: "📌 Other"
+            };
+
+            let totalAdditions = 0;
+            let totalDeletions = 0;
+
+            const contributors = new Map();
+
+            for (const file of files) {
+              totalAdditions += file.additions;
+              totalDeletions += file.deletions;
+            }
+
+            for (const commit of commits) {
+              const sha = commit.sha.substring(0, 7);
+              const url = commit.html_url;
+
+              const author =
+                commit.author?.login ||
+                commit.commit.author.name;
+
+              contributors.set(
+                author,
+                (contributors.get(author) || 0) + 1
+              );
+
+              const message =
+                commit.commit.message.split("\n")[0];
+
+              const match = message.match(
+                /^(\w+)(\((.*?)\))?:\s(.+)$/
+              );
+
+              let type = "other";
+              let scope = "";
+              let description = message;
+
+              if (match) {
+                type = match[1];
+                scope = match[3] || "";
+                description = match[4];
+              }
+
+              if (!groups[type]) {
+                type = "other";
+              }
+
+              groups[type].push({
+                sha,
+                scope,
+                description,
+                url,
+                author
+              });
+            }
+
+            const changedFiles = files
+              .sort((a, b) => b.changes - a.changes)
+              .slice(0, 15);
+
+            const filesByExtension = {};
+
+            for (const file of files) {
+              const ext =
+                file.filename.includes(".")
+                  ? file.filename.split(".").pop()
+                  : "other";
+
+              filesByExtension[ext] =
+                (filesByExtension[ext] || 0) + 1;
+            }
+
+            const sortedExtensions = Object.entries(filesByExtension)
+              .sort((a, b) => b[1] - a[1]);
+
+            let body = "";
+
+            body += `
+            <!-- pr-rich-summary -->
+
+            <h1>📋 Pull Request Summary</h1>
+
+            <table>
+              <tr>
+                <td><b>Repository</b></td>
+                <td>${context.repo.owner}/${context.repo.repo}</td>
+              </tr>
+
+              <tr>
+                <td><b>PR</b></td>
+                <td>
+                  <a href="${pr.html_url}">
+                    #${pr.number} — ${pr.title}
+                  </a>
+                </td>
+              </tr>
+
+              <tr>
+                <td><b>Author</b></td>
+                <td>@${pr.user.login}</td>
+              </tr>
+
+              <tr>
+                <td><b>Branch</b></td>
+                <td>
+                  <code>${pr.head.ref}</code>
+                  →
+                  <code>${pr.base.ref}</code>
+                </td>
+              </tr>
+            </table>
+
+            <br/>
+
+            <table>
+              <tr>
+                <td align="center">
+                  <h2>${commits.length}</h2>
+                  commits
+                </td>
+
+                <td align="center">
+                  <h2>${files.length}</h2>
+                  changed files
+                </td>
+
+                <td align="center">
+                  <h2>+${totalAdditions}</h2>
+                  additions
+                </td>
+
+                <td align="center">
+                  <h2>-${totalDeletions}</h2>
+                  deletions
+                </td>
+              </tr>
+            </table>
+
+            <br/>
+            `;
+
+            for (const [type, items] of Object.entries(groups)) {
+              if (!items.length) continue;
+
+              body += `
+              <details open>
+                <summary>
+                  <b>${titles[type]}</b> (${items.length})
+                </summary>
+
+                <br/>
+
+                <table>
+                  <tr>
+                    <th>Commit</th>
+                    <th>Description</th>
+                    <th>Author</th>
+                  </tr>
+              `;
+
+              for (const item of items) {
+                const scope = item.scope
+                  ? `<code>${item.scope}</code> `
+                  : "";
+
+                body += `
+                  <tr>
+                    <td>
+                      <a href="${item.url}">
+                        <code>${item.sha}</code>
+                      </a>
+                    </td>
+
+                    <td>
+                      ${scope}${item.description}
+                    </td>
+
+                    <td>@${item.author}</td>
+                  </tr>
+                `;
+              }
+
+              body += `
+                </table>
+              </details>
+
+              <br/>
+              `;
+            }
+
+            body += `
+            <h2>📂 Most Changed Files</h2>
+
+            <table>
+              <tr>
+                <th>File</th>
+                <th>Status</th>
+                <th>Changes</th>
+              </tr>
+            `;
+
+            for (const file of changedFiles) {
+              const statusEmoji = {
+                added: "🟢",
+                modified: "🟡",
+                removed: "🔴",
+                renamed: "🔵"
+              }[file.status] || "⚪";
+
+              body += `
+              <tr>
+                <td>
+                  <code>${file.filename}</code>
+                </td>
+
+                <td>
+                  ${statusEmoji} ${file.status}
+                </td>
+
+                <td>
+                  +${file.additions}
+                  / -${file.deletions}
+                </td>
+              </tr>
+              `;
+            }
+
+            body += `
+            </table>
+
+            <br/>
+
+            <h2>🧩 File Types</h2>
+
+            <table>
+              <tr>
+                <th>Extension</th>
+                <th>Files</th>
+              </tr>
+            `;
+
+            for (const [ext, count] of sortedExtensions) {
+              body += `
+              <tr>
+                <td><code>.${ext}</code></td>
+                <td>${count}</td>
+              </tr>
+              `;
+            }
+
+            body += `
+            </table>
+
+            <br/>
+
+            <h2>👥 Contributors</h2>
+
+            <table>
+              <tr>
+                <th>User</th>
+                <th>Commits</th>
+              </tr>
+            `;
+
+            for (const [user, count] of contributors.entries()) {
+              body += `
+              <tr>
+                <td>@${user}</td>
+                <td>${count}</td>
+              </tr>
+              `;
+            }
+
+            body += `
+            </table>
+
+            <br/>
+
+            <details>
+              <summary>
+                <b>🔎 View raw commit messages</b>
+              </summary>
+
+              <br/>
+
+              <pre>
+            `;
+
+            for (const commit of commits) {
+              body += `${commit.commit.message}\n\n`;
+            }
+
+            body += `
+              </pre>
+            </details>
+
+            <br/>
+
+            <hr/>
+
+            <sub>
+              Generated automatically from conventional commits and pull request metadata.
+            </sub>
+            `;
+
+            core.setOutput("body", body);
+
+      - name: Create or update PR comment
+        uses: actions/github-script@v7
+        env:
+          BODY: ${{ steps.summary.outputs.body }}
+        with:
+          script: |
+            const marker = '<!-- pr-rich-summary -->';
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number
+              }
+            );
+
+            const existing = comments.find(comment =>
+              comment.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: process.env.BODY
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: process.env.BODY
+              });
+            }
