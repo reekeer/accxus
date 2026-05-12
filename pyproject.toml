@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name        = "accxus"
-version     = "0.1.0"
+version     = "0.3.0"
 description = "accxus is a program where you can create, manage, and modify accounts on various social networks. It uses SMS activation services for registration."
 readme      = "README.md"
 requires-python = ">=3.10"
