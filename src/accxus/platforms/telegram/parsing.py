@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -114,9 +115,13 @@ def _serializable_value(value: Any, depth: int = 0) -> Any:
 
 
 def _normalize_gift(gift: Any) -> dict[str, Any]:
+    if gift is None:
+        return {}
+
     data = _serializable_value(gift)
     if not isinstance(data, dict):
         data = {"value": data}
+
     from_id = (
         data.get("from")
         or data.get("from_id")
@@ -127,11 +132,40 @@ def _normalize_gift(gift: Any) -> dict[str, Any]:
     )
     gift_type = data.get("type") or data.get("_") or data.get("title") or type(gift).__name__
     date = data.get("date") or data.get("timestamp") or ""
-    normalized = {"from": from_id, "type": gift_type, "date": date}
+
+    res = {
+        "from": from_id,
+        "type": gift_type,
+        "date": date,
+        "price": 0,
+        "currency": "stars",
+        "status": "common",
+        "message": data.get("message") or "",
+    }
+
+    # Enhanced parsing for Star Gifts
+    if hasattr(gift, "gift"):  # UserStarGift
+        g = gift.gift
+        res["price"] = getattr(g, "stars", 0)
+        if getattr(g, "limited_count", 0) > 0:
+            res["status"] = "rare"
+        if getattr(gift, "upgraded", False):
+            res["status"] = "upgraded"
+            if getattr(gift, "upgrade_tag", None):
+                res["status"] += f" ({gift.upgrade_tag})"
+
+    # Premium Gift parsing
+    if res["type"] == "PremiumGiftOption":
+        res["price"] = data.get("amount", 0)
+        res["currency"] = data.get("currency", "USD")
+        res["status"] = "premium"
+
+    # Merge remaining fields
     for key, value in data.items():
-        if key not in normalized and key not in {"from_id", "sender_id", "user_id", "peer_id"}:
-            normalized[key] = value
-    return normalized
+        if key not in res and key not in {"from_id", "sender_id", "user_id", "peer_id"}:
+            res[key] = value
+
+    return res
 
 
 def _normalize_gifts(values: Any) -> list[dict[str, Any]]:
@@ -334,20 +368,57 @@ async def _message_to_dict(client: Any, msg: Any, media_dir: Path | None) -> dic
     }
 
 
+async def get_chat_senders(
+    session_name: str,
+    chat: ChatRef,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Fetch unique senders from chat history to allow filtering."""
+    senders: dict[int, dict[str, Any]] = {}
+    async with connected(session_name) as client:
+        resolved_chat = await _resolve_chat_ref(client, chat)
+        async for msg in client.get_chat_history(resolved_chat, limit=limit):
+            u = msg.from_user
+            if u:
+                if u.id not in senders:
+                    name = f"{u.first_name or ''} {u.last_name or ''}".strip() or str(u.id)
+                    label = f"{name} ({u.id}/@{u.username})" if u.username else f"{name} ({u.id})"
+                    senders[u.id] = {"id": u.id, "label": label, "username": u.username}
+            elif msg.sender_chat:
+                c = msg.sender_chat
+                if c.id not in senders:
+                    name = c.title or str(c.id)
+                    label = f"{name} ({c.id}/@{c.username})" if c.username else f"{name} ({c.id})"
+                    senders[c.id] = {"id": c.id, "label": label, "username": c.username}
+            await asyncio.sleep(0.02)
+    return sorted(senders.values(), key=lambda x: x["label"])
+
+
 async def export_chat_history(
     session_name: str,
     chat: ChatRef,
     limit: int = 0,
     on_progress: Callable[[int], None] | None = None,
     media_dir: Path | None = None,
+    sender_ids: list[int] | None = None,
 ) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     async with connected(session_name) as client:
         resolved_chat = await _resolve_chat_ref(client, chat)
         async for msg in client.get_chat_history(resolved_chat, limit=limit or 0):  # type: ignore[reportGeneralTypeIssues]
+            if sender_ids:
+                sid = (msg.from_user.id if msg.from_user else None) or (
+                    msg.sender_chat.id if msg.sender_chat else None
+                )
+                if sid not in sender_ids:
+                    continue
+
             messages.append(await _message_to_dict(client, msg, media_dir))
             if on_progress and len(messages) % 100 == 0:
                 on_progress(len(messages))
+
+            # Cooldown to avoid bans
+            await asyncio.sleep(0.05)
     return messages
 
 
@@ -359,8 +430,9 @@ async def save_chat_history(
     limit: int = 0,
     on_progress: Callable[[int], None] | None = None,
     media_dir: Path | None = None,
+    sender_ids: list[int] | None = None,
 ) -> int:
-    messages = await export_chat_history(session_name, chat, limit, on_progress, media_dir)
+    messages = await export_chat_history(session_name, chat, limit, on_progress, media_dir, sender_ids)
     dest.parent.mkdir(parents=True, exist_ok=True)
     if fmt == "txt":
         lines = [f"[{m['date']}] {m['from'] or 'unknown'}: {m['text']}" for m in messages]
