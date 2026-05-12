@@ -158,6 +158,14 @@ class ParsingTab(Widget):
                 yield Label("[bold]Export Chat History[/bold]")
                 yield Select(choices, id="exp_sess", prompt="Select session")
                 yield Input(placeholder="Chat: @group / username / ID", id="exp_chat")
+                with Widget(classes="prow"):
+                    yield Button("Fetch Senders", id="btn_fetch_senders")
+                    yield Select(
+                        [("All Senders", "all")],
+                        id="exp_sender",
+                        prompt="Filter by sender",
+                        value="all",
+                    )
                 yield Input(placeholder="Output file  (default: export_<chat>.json)", id="exp_out")
                 yield Input(placeholder="Media dir (blank = no media download)", id="exp_media")
                 yield Input(placeholder="Limit (blank = all)", id="exp_limit")
@@ -498,6 +506,8 @@ class ParsingTab(Widget):
             await self._do_snapshot()
         elif bid == "btn_prof_history":
             self._show_profile_history()
+        elif bid == "btn_fetch_senders":
+            await self._do_fetch_senders()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id != "chats_table":
@@ -510,6 +520,29 @@ class ParsingTab(Widget):
         else:
             self._selected_chats.add(key)
         self._sync_selected_chats()
+
+    async def _do_fetch_senders(self) -> None:
+        session = _get_session(self, "#exp_sess")
+        chat = self.query_one("#exp_chat", Input).value.strip()
+        if not session or not chat:
+            self.app.notify("Select a session and enter a chat to fetch senders", severity="warning")
+            return
+
+        status = self.query_one("#exp_status", Static)
+        status.update("[dim]Fetching unique senders from history…[/dim]")
+        try:
+            senders = await tg_parsing.get_chat_senders(session, chat, limit=500)
+            sel = self.query_one("#exp_sender", Select)
+            choices = [("All Senders", "all")] + [(s["label"], str(s["id"])) for s in senders]
+            if hasattr(sel, "set_options"):
+                sel.set_options(choices)  # type: ignore[attr-defined]
+            else:
+                sel.options = choices  # type: ignore[attr-defined]
+            sel.value = "all"
+            status.update(f"✅ Found {len(senders)} senders")
+        except Exception as e:
+            status.update(f"❌ {e}")
+            log.error("fetch senders error: %s", e)
 
     async def _do_export(self, fmt: str) -> None:
         session = _get_session(self, "#exp_sess")
@@ -524,6 +557,12 @@ class ParsingTab(Widget):
         limit = int(limit_raw) if limit_raw.isdigit() else 0
         dest = Path(out_raw or f"export_{chat.lstrip('@')}.{fmt}")
         media_dir = Path(media_raw) if media_raw else None
+
+        sender_id_raw = self.query_one("#exp_sender", Select).value
+        sender_ids = None
+        if sender_id_raw and sender_id_raw != "all":
+            sender_ids = [int(sender_id_raw)]
+
         status = self.query_one("#exp_status", Static)
         log_view = self.query_one("#export_log", RichLog)
 
@@ -543,6 +582,7 @@ class ParsingTab(Widget):
                 limit=limit,
                 on_progress=_prog,
                 media_dir=media_dir,
+                sender_ids=sender_ids,
             )
             media_note = f"; media → {media_dir}" if media_dir else ""
             status.update(f"✅ {count} messages → {dest}{media_note}")
