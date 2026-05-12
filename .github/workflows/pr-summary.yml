@@ -16,12 +16,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Generate rich PR summary
+      - name: Generate PR summary
         id: summary
         uses: actions/github-script@v7
         with:
@@ -57,8 +57,8 @@ jobs:
               test: [],
               chore: [],
               ci: [],
-              build: [],
               style: [],
+              build: [],
               revert: [],
               other: []
             };
@@ -72,20 +72,32 @@ jobs:
               test: "🧪 Tests",
               chore: "🔧 Chores",
               ci: "🚀 CI",
-              build: "📦 Build",
               style: "🎨 Style",
+              build: "📦 Build",
               revert: "⏪ Reverts",
               other: "📌 Other"
             };
 
-            let totalAdditions = 0;
-            let totalDeletions = 0;
+            let additions = 0;
+            let deletions = 0;
 
             const contributors = new Map();
+            const scopeStats = new Map();
+            const dirStats = new Map();
 
             for (const file of files) {
-              totalAdditions += file.additions;
-              totalDeletions += file.deletions;
+              additions += file.additions;
+              deletions += file.deletions;
+
+              const dir =
+                file.filename.includes("/")
+                  ? file.filename.split("/")[0]
+                  : "root";
+
+              dirStats.set(
+                dir,
+                (dirStats.get(dir) || 0) + 1
+              );
             }
 
             for (const commit of commits) {
@@ -122,273 +134,187 @@ jobs:
                 type = "other";
               }
 
+              if (scope) {
+                scopeStats.set(
+                  scope,
+                  (scopeStats.get(scope) || 0) + 1
+                );
+              }
+
               groups[type].push({
                 sha,
+                url,
                 scope,
                 description,
-                url,
                 author
               });
             }
 
-            const changedFiles = files
+            const topFiles = [...files]
               .sort((a, b) => b.changes - a.changes)
-              .slice(0, 15);
+              .slice(0, 10);
 
-            const filesByExtension = {};
+            const topScopes = [...scopeStats.entries()]
+              .sort((a, b) => b[1] - a[1]);
 
-            for (const file of files) {
-              const ext =
-                file.filename.includes(".")
-                  ? file.filename.split(".").pop()
-                  : "other";
+            const topDirs = [...dirStats.entries()]
+              .sort((a, b) => b[1] - a[1]);
 
-              filesByExtension[ext] =
-                (filesByExtension[ext] || 0) + 1;
+            function progress(value, total) {
+              const width = 20;
+              const filled = Math.round((value / total) * width);
+
+              return (
+                "█".repeat(filled) +
+                "░".repeat(width - filled)
+              );
             }
 
-            const sortedExtensions = Object.entries(filesByExtension)
-              .sort((a, b) => b[1] - a[1]);
+            const totalTypedCommits = Object.values(groups)
+              .reduce((acc, arr) => acc + arr.length, 0);
 
             let body = "";
 
-            body += `
-            <!-- pr-rich-summary -->
+            body += `<!-- pr-rich-summary -->\n`;
 
-            <h1>📋 Pull Request Summary</h1>
+            body += `# 📋 PR Summary\n\n`;
 
-            <table>
-              <tr>
-                <td><b>Repository</b></td>
-                <td>${context.repo.owner}/${context.repo.repo}</td>
-              </tr>
+            body += `### ${pr.title}\n\n`;
 
-              <tr>
-                <td><b>PR</b></td>
-                <td>
-                  <a href="${pr.html_url}">
-                    #${pr.number} — ${pr.title}
-                  </a>
-                </td>
-              </tr>
+            body += `> ${pr.user.login} opened a pull request from \`${pr.head.ref}\` → \`${pr.base.ref}\`\n\n`;
 
-              <tr>
-                <td><b>Author</b></td>
-                <td>@${pr.user.login}</td>
-              </tr>
+            body += `---\n\n`;
 
-              <tr>
-                <td><b>Branch</b></td>
-                <td>
-                  <code>${pr.head.ref}</code>
-                  →
-                  <code>${pr.base.ref}</code>
-                </td>
-              </tr>
-            </table>
+            body += `## 📊 Overview\n\n`;
 
-            <br/>
+            body += `| Metric | Value |\n`;
+            body += `|---|---|\n`;
+            body += `| Commits | \`${commits.length}\` |\n`;
+            body += `| Changed Files | \`${files.length}\` |\n`;
+            body += `| Additions | \`+${additions}\` |\n`;
+            body += `| Deletions | \`-${deletions}\` |\n`;
+            body += `| Contributors | \`${contributors.size}\` |\n\n`;
 
-            <table>
-              <tr>
-                <td align="center">
-                  <h2>${commits.length}</h2>
-                  commits
-                </td>
+            body += `---\n\n`;
 
-                <td align="center">
-                  <h2>${files.length}</h2>
-                  changed files
-                </td>
-
-                <td align="center">
-                  <h2>+${totalAdditions}</h2>
-                  additions
-                </td>
-
-                <td align="center">
-                  <h2>-${totalDeletions}</h2>
-                  deletions
-                </td>
-              </tr>
-            </table>
-
-            <br/>
-            `;
+            body += `## 📈 Change Distribution\n\n`;
 
             for (const [type, items] of Object.entries(groups)) {
               if (!items.length) continue;
 
-              body += `
-              <details open>
-                <summary>
-                  <b>${titles[type]}</b> (${items.length})
-                </summary>
+              const bar = progress(
+                items.length,
+                totalTypedCommits
+              );
 
-                <br/>
+              body += `- ${titles[type]}  \`${bar}\` ${items.length}\n`;
+            }
 
-                <table>
-                  <tr>
-                    <th>Commit</th>
-                    <th>Description</th>
-                    <th>Author</th>
-                  </tr>
-              `;
+            body += `\n---\n\n`;
+
+            for (const [type, items] of Object.entries(groups)) {
+              if (!items.length) continue;
+
+              body += `## ${titles[type]}\n\n`;
+
+              body += `<details open>\n`;
+              body += `<summary><b>${items.length} commits</b></summary>\n\n`;
 
               for (const item of items) {
                 const scope = item.scope
-                  ? `<code>${item.scope}</code> `
+                  ? `\`${item.scope}\` `
                   : "";
 
-                body += `
-                  <tr>
-                    <td>
-                      <a href="${item.url}">
-                        <code>${item.sha}</code>
-                      </a>
-                    </td>
-
-                    <td>
-                      ${scope}${item.description}
-                    </td>
-
-                    <td>@${item.author}</td>
-                  </tr>
-                `;
+                body += `- [\`${item.sha}\`](${item.url}) ${scope}${item.description} — @${item.author}\n`;
               }
 
-              body += `
-                </table>
-              </details>
-
-              <br/>
-              `;
+              body += `\n</details>\n\n`;
             }
 
-            body += `
-            <h2>📂 Most Changed Files</h2>
+            body += `---\n\n`;
 
-            <table>
-              <tr>
-                <th>File</th>
-                <th>Status</th>
-                <th>Changes</th>
-              </tr>
-            `;
+            body += `## 🎯 Main Impact Areas\n\n`;
 
-            for (const file of changedFiles) {
-              const statusEmoji = {
-                added: "🟢",
-                modified: "🟡",
-                removed: "🔴",
-                renamed: "🔵"
-              }[file.status] || "⚪";
-
-              body += `
-              <tr>
-                <td>
-                  <code>${file.filename}</code>
-                </td>
-
-                <td>
-                  ${statusEmoji} ${file.status}
-                </td>
-
-                <td>
-                  +${file.additions}
-                  / -${file.deletions}
-                </td>
-              </tr>
-              `;
+            for (const [scope, count] of topScopes.slice(0, 8)) {
+              body += `- \`${scope}\` — ${count} commits\n`;
             }
 
-            body += `
-            </table>
+            body += `\n---\n\n`;
 
-            <br/>
+            body += `## 📂 Most Changed Files\n\n`;
 
-            <h2>🧩 File Types</h2>
+            body += `\`\`\`diff\n`;
 
-            <table>
-              <tr>
-                <th>Extension</th>
-                <th>Files</th>
-              </tr>
-            `;
-
-            for (const [ext, count] of sortedExtensions) {
-              body += `
-              <tr>
-                <td><code>.${ext}</code></td>
-                <td>${count}</td>
-              </tr>
-              `;
+            for (const file of topFiles) {
+              body += `+ ${String(file.additions).padEnd(4)} `;
+              body += `- ${String(file.deletions).padEnd(4)} `;
+              body += `${file.filename}\n`;
             }
 
-            body += `
-            </table>
+            body += `\`\`\`\n\n`;
 
-            <br/>
+            body += `---\n\n`;
 
-            <h2>👥 Contributors</h2>
+            body += `## 🧩 Changed Directories\n\n`;
 
-            <table>
-              <tr>
-                <th>User</th>
-                <th>Commits</th>
-              </tr>
-            `;
+            for (const [dir, count] of topDirs.slice(0, 10)) {
+              body += `- \`${dir}/\` — ${count} files\n`;
+            }
+
+            body += `\n---\n\n`;
+
+            body += `## ⚠️ High Impact Files\n\n`;
+
+            const risky = files
+              .filter(f => f.changes > 200)
+              .sort((a, b) => b.changes - a.changes);
+
+            if (risky.length) {
+              for (const file of risky) {
+                body += `- \`${file.filename}\` `;
+                body += `(+${file.additions} / -${file.deletions})\n`;
+              }
+            } else {
+              body += `No high impact files detected.\n`;
+            }
+
+            body += `\n---\n\n`;
+
+            body += `## 👥 Contributors\n\n`;
 
             for (const [user, count] of contributors.entries()) {
-              body += `
-              <tr>
-                <td>@${user}</td>
-                <td>${count}</td>
-              </tr>
-              `;
+              body += `- @${user} — ${count} commits\n`;
             }
 
-            body += `
-            </table>
+            body += `\n---\n\n`;
 
-            <br/>
+            body += `## 🔎 Raw Commit Messages\n\n`;
 
-            <details>
-              <summary>
-                <b>🔎 View raw commit messages</b>
-              </summary>
+            body += `<details>\n`;
+            body += `<summary>Show raw commits</summary>\n\n`;
 
-              <br/>
-
-              <pre>
-            `;
+            body += `\`\`\`text\n`;
 
             for (const commit of commits) {
               body += `${commit.commit.message}\n\n`;
             }
 
-            body += `
-              </pre>
-            </details>
+            body += `\`\`\`\n`;
+            body += `</details>\n\n`;
 
-            <br/>
+            body += `---\n\n`;
 
-            <hr/>
-
-            <sub>
-              Generated automatically from conventional commits and pull request metadata.
-            </sub>
-            `;
+            body += `<sub>Generated automatically from conventional commits and PR metadata.</sub>`;
 
             core.setOutput("body", body);
 
-      - name: Create or update PR comment
+      - name: Create or update comment
         uses: actions/github-script@v7
         env:
           BODY: ${{ steps.summary.outputs.body }}
         with:
           script: |
-            const marker = '<!-- pr-rich-summary -->';
+            const marker = '<!-- pr-summary -->';
 
             const comments = await github.paginate(
               github.rest.issues.listComments,
