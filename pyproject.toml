@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "accxus"
-dynamic = ["version"]
+version = "0.4.1"
 description = "Account automation toolkit for social networks using SMS activation services."
 readme = "README.md"
 requires-python = ">=3.10"
