@@ -83,7 +83,9 @@ class TelegramConverterTab(Widget):
         if event.button.id == "btn_convert":
             await self._do_convert()
         elif event.button.id == "btn_select_all":
-            self._selected = {s.name for s in tg_sessions.list_sessions() if s.kind == SessionKind.TELETHON}
+            self._selected = {
+                s.name for s in tg_sessions.list_sessions() if s.kind == SessionKind.TELETHON
+            }
             self._sync_selected_rows()
         elif event.button.id == "btn_clear":
             self._selected.clear()

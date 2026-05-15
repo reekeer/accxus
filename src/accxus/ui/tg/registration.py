@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import random
 import string
@@ -111,19 +112,15 @@ class RegistrationTab(Widget):
         self.run_worker(self._load_form_data())
 
     def _log(self, text: str) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#reg_log", RichLog).write(text)
-        except Exception:
-            pass
 
     async def _load_form_data(self) -> None:
         proxy_options: list[tuple[str, str]] = [("No proxy", "")]
         for p in cfg.config.proxies:
             proxy_options.append((p.display_name or p.to_url(), p.to_url()))
-        try:
+        with contextlib.suppress(Exception):
             self.query_one("#reg_proxy", Select).set_options(proxy_options)
-        except Exception:
-            pass
 
         self._log("[dim]Loading countries from SMS providers...[/dim]")
         try:
@@ -209,7 +206,9 @@ class RegistrationTab(Widget):
                 first_names = ["User"]
 
             usernames_text = self.query_one("#reg_usernames", TextArea).text
-            username_templates = [line.strip() for line in usernames_text.splitlines() if line.strip()]
+            username_templates = [
+                line.strip() for line in usernames_text.splitlines() if line.strip()
+            ]
 
             manager = SmsManager.from_config(cfg.config.sms_providers)
 
@@ -254,9 +253,7 @@ class RegistrationTab(Widget):
                 return False
 
             try:
-                activation = await manager.get_number(
-                    "tg", country_id, provider=provider_name
-                )
+                activation = await manager.get_number("tg", country_id, provider=provider_name)
                 self._log(f"[green]Got number: {activation.phone}[/green]")
             except Exception as e:
                 self._log(f"[red]Get number failed: {e}[/red]")
@@ -269,9 +266,7 @@ class RegistrationTab(Widget):
                 await client.connect()
                 sent = await client.send_code(activation.phone)
             except PhoneNumberOccupied:
-                self._log(
-                    "[yellow]Number occupied, cancelling and waiting 2 min...[/yellow]"
-                )
+                self._log("[yellow]Number occupied, cancelling and waiting 2 min...[/yellow]")
                 await manager.cancel(activation)
                 await client.disconnect()
                 for _ in range(120):
@@ -369,15 +364,11 @@ class RegistrationTab(Widget):
     def _generate_username(self, templates: list[str]) -> str:
         template = random.choice(templates)
         if template == "random":
-            return "".join(
-                random.choices(string.ascii_lowercase + string.digits, k=8)
-            )
+            return "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
         if template.startswith("random:"):
             spec = template.split(":", 1)[1]
             if spec.isdigit():
-                return "".join(
-                    random.choices(string.ascii_lowercase + string.digits, k=int(spec))
-                )
+                return "".join(random.choices(string.ascii_lowercase + string.digits, k=int(spec)))
             if spec == "word":
                 words = [
                     "alpha",
@@ -391,7 +382,5 @@ class RegistrationTab(Widget):
                     "nova",
                     "zen",
                 ]
-                return random.choice(words) + "".join(
-                    random.choices(string.digits, k=3)
-                )
+                return random.choice(words) + "".join(random.choices(string.digits, k=3))
         return template
