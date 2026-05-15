@@ -22,7 +22,7 @@
 ## 📦 Installation
 
 ```bash
-pip install -e .
+pip install accxus
 ```
 
 ---
