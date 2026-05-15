@@ -4,7 +4,7 @@ import contextlib
 import urllib.parse
 
 from rigi import ComposeResult, Widget
-from rigi.layout.pane import RigiCard, RigiPane
+from rigi.layout.pane import Card, Pane
 from rigi.widgets import Button, Input, Label, Select, Static
 
 import accxus.config as cfg
@@ -14,10 +14,10 @@ from accxus.types.core import ProxyConfig
 
 class AddProxyTab(Widget):
     DEFAULT_CSS = """
-    AddProxyTab RigiPane {
+    AddProxyTab Pane {
         overflow-y: auto;
     }
-    AddProxyTab RigiCard {
+    AddProxyTab Card {
         height: auto;
     }
     AddProxyTab Button {
@@ -41,8 +41,8 @@ class AddProxyTab(Widget):
     """
 
     def compose(self) -> ComposeResult:
-        yield RigiPane(
-            RigiCard(
+        yield Pane(
+            Card(
                 Label("[bold cyan]Add Proxy[/bold cyan]"),
                 Label("[dim]Add a new proxy to your configuration[/dim]"),
                 Label("\n[bold]Name[/bold]"),
@@ -76,7 +76,7 @@ class AddProxyTab(Widget):
                 Static("", id="proxy_status"),
                 title="  Add Proxy",
             ),
-            RigiCard(
+            Card(
                 Label(id="proxy_preview", markup=True),
                 title="  Preview",
             ),

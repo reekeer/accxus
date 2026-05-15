@@ -25,12 +25,12 @@ def test_no_pyrogram_at_import_time() -> None:
 
 
 def test_build_app_returns_rigi_app() -> None:
-    from rigi import RigiApp
+    from rigi import App
 
     from accxus.ui.app import _build_app  # pyright: ignore[reportPrivateUsage]
 
     app = _build_app()
-    assert isinstance(app, RigiApp)
+    assert isinstance(app, App)
 
 
 def test_proxy_pool_import() -> None:

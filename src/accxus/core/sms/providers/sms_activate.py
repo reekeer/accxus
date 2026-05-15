@@ -107,3 +107,26 @@ class SmsActivateProvider(AbstractSmsProvider):
         except Exception as e:
             log.warning(f"[sms_activate] list_services failed: {e}")
             return []
+
+    async def list_countries_for_service(self, service: str) -> list[tuple[int, str, float]]:
+        try:
+            text = await self._get(action="getPrices", service=service)
+            data: dict[str, dict[str, Any]] = json.loads(text)
+            prices: dict[int, float] = {}
+            for country_str, info in data.get(service, {}).items():
+                if int(info.get("count", 0)) > 0:
+                    prices[int(country_str)] = float(info.get("cost", 0))
+            if not prices:
+                return []
+            names_text = await self._get(action="getCountries")
+            names_data: list[dict[str, Any]] = json.loads(names_text)
+            out: list[tuple[int, str, float]] = []
+            for item in names_data:
+                cid = int(item.get("id", 0))
+                if cid in prices:
+                    name = item.get("name", f"Country {cid}")
+                    out.append((cid, name, prices[cid]))
+            return out
+        except Exception as e:
+            log.warning(f"[sms_activate] list_countries_for_service failed: {e}")
+            return []
