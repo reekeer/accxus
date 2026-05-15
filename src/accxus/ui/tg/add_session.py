@@ -265,6 +265,7 @@ class AddSessionTab(Widget):
                 first_name=me.first_name or "",
                 last_name=me.last_name or "",
                 username=me.username or "",
+                dc_id=await self._client.storage.dc_id(),
             )
             tg_sessions.update_metadata(self._name, info)
             await self._client.disconnect()

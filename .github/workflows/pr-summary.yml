@@ -1,0 +1,474 @@
+name: PR Summary
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  pr-summary:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Detect fork
+        id: detect
+        run: |
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.event.pull_request.base.repo.full_name }}" ]; then
+            echo "is_fork=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_fork=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate PR summary
+        id: summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+
+            const commits = await github.paginate(
+              github.rest.pulls.listCommits,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                per_page: 100
+              }
+            );
+
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                per_page: 100
+              }
+            );
+
+            const groups = {
+              feat: [],
+              fix: [],
+              refactor: [],
+              perf: [],
+              docs: [],
+              test: [],
+              chore: [],
+              ci: [],
+              style: [],
+              build: [],
+              revert: [],
+              other: []
+            };
+
+            const titles = {
+              feat: "✨ Features",
+              fix: "🐛 Fixes",
+              refactor: "♻️ Refactoring",
+              perf: "⚡ Performance",
+              docs: "📝 Documentation",
+              test: "🧪 Tests",
+              chore: "🔧 Chores",
+              ci: "🚀 CI",
+              style: "🎨 Style",
+              build: "📦 Build",
+              revert: "⏪ Reverts",
+              other: "📌 Other"
+            };
+
+            let additions = 0;
+            let deletions = 0;
+
+            const contributors = new Map();
+            const scopeStats = new Map();
+            const dirStats = new Map();
+
+            for (const file of files) {
+              additions += file.additions;
+              deletions += file.deletions;
+
+              const dir = file.filename.includes("/")
+                ? file.filename.split("/")[0]
+                : "root";
+
+              dirStats.set(dir, (dirStats.get(dir) || 0) + 1);
+            }
+
+            for (const commit of commits) {
+              const sha = commit.sha.substring(0, 7);
+              const url = commit.html_url;
+
+              const author =
+                commit.author?.login ||
+                commit.commit.author.name;
+
+              contributors.set(author, (contributors.get(author) || 0) + 1);
+
+              const message = commit.commit.message.split("\n")[0];
+
+              const match = message.match(
+                /^(\w+)(\((.*?)\))?:\s(.+)$/
+              );
+
+              let type = "other";
+              let scope = "";
+              let description = message;
+
+              if (match) {
+                type = match[1];
+                scope = match[3] || "";
+                description = match[4];
+              }
+
+              if (!groups[type]) {
+                type = "other";
+              }
+
+              if (scope) {
+                scopeStats.set(scope, (scopeStats.get(scope) || 0) + 1);
+              }
+
+              groups[type].push({
+                sha,
+                url,
+                scope,
+                description,
+                author
+              });
+            }
+
+            const topFiles = [...files]
+              .sort((a, b) => b.changes - a.changes)
+              .slice(0, 10);
+
+            const topScopes = [...scopeStats.entries()]
+              .sort((a, b) => b[1] - a[1]);
+
+            const topDirs = [...dirStats.entries()]
+              .sort((a, b) => b[1] - a[1]);
+
+            function progress(value, total) {
+              const width = 20;
+              const filled = Math.round((value / total) * width);
+
+              return (
+                "█".repeat(filled) +
+                "░".repeat(width - filled)
+              );
+            }
+
+            const totalTypedCommits = Object.values(groups)
+              .reduce((acc, arr) => acc + arr.length, 0);
+
+            let body = "";
+
+            body += `<!-- pr-summary -->\n`;
+            body += `# 📋 PR Summary\n\n`;
+            body += `### ${pr.title}\n\n`;
+            body += `> ${pr.user.login} opened a pull request from \`${pr.head.ref}\` → \`${pr.base.ref}\`\n\n`;
+
+            body += `---\n\n`;
+            body += `## 📊 Overview\n\n`;
+            body += `| Metric | Value |\n`;
+            body += `|---|---|\n`;
+            body += `| Commits | \`${commits.length}\` |\n`;
+            body += `| Changed Files | \`${files.length}\` |\n`;
+            body += `| Additions | \`+${additions}\` |\n`;
+            body += `| Deletions | \`-${deletions}\` |\n`;
+            body += `| Contributors | \`${contributors.size}\` |\n\n`;
+
+            body += `---\n\n`;
+            body += `## 📈 Change Distribution\n\n`;
+
+            for (const [type, items] of Object.entries(groups)) {
+              if (!items.length) continue;
+
+              const bar = progress(
+                items.length,
+                totalTypedCommits
+              );
+
+              body += `- ${titles[type]} \`${bar}\` ${items.length}\n`;
+            }
+
+            body += `\n---\n\n`;
+
+            for (const [type, items] of Object.entries(groups)) {
+              if (!items.length) continue;
+
+              body += `## ${titles[type]}\n\n`;
+              body += `<details open>\n`;
+              body += `<summary><b>${items.length} commits</b></summary>\n\n`;
+
+              for (const item of items) {
+                const scope = item.scope
+                  ? `\`${item.scope}\` `
+                  : "";
+
+                body += `- [\`${item.sha}\`](${item.url}) ${scope}${item.description} — @${item.author}\n`;
+              }
+
+              body += `\n</details>\n\n`;
+            }
+
+            body += `---\n\n`;
+            body += `## 🎯 Main Impact Areas\n\n`;
+
+            for (const [scope, count] of topScopes.slice(0, 8)) {
+              body += `- \`${scope}\` — ${count} commits\n`;
+            }
+
+            body += `\n---\n\n`;
+            body += `## 📂 Most Changed Files\n\n`;
+            body += "```diff\n";
+
+            for (const file of topFiles) {
+              body += `+ ${String(file.additions).padEnd(4)}`;
+              body += `- ${String(file.deletions).padEnd(4)}`;
+              body += `${file.filename}\n`;
+            }
+
+            body += "```\n\n";
+
+            body += `---\n\n`;
+            body += `## 🧩 Changed Directories\n\n`;
+
+            for (const [dir, count] of topDirs.slice(0, 10)) {
+              body += `- \`${dir}/\` — ${count} files\n`;
+            }
+
+            body += `\n---\n\n`;
+            body += `## ⚠️ High Impact Files\n\n`;
+
+            const risky = files
+              .filter(file => file.changes > 200)
+              .sort((a, b) => b.changes - a.changes);
+
+            if (risky.length) {
+              for (const file of risky) {
+                body += `- \`${file.filename}\` (+${file.additions} / -${file.deletions})\n`;
+              }
+            } else {
+              body += `No high impact files detected.\n`;
+            }
+
+            body += `\n---\n\n`;
+            body += `## 👥 Contributors\n\n`;
+
+            for (const [user, count] of contributors.entries()) {
+              body += `- @${user} — ${count} commits\n`;
+            }
+
+            body += `\n---\n\n`;
+            body += `## 🔎 Raw Commit Messages\n\n`;
+            body += `<details>\n`;
+            body += `<summary>Show raw commits</summary>\n\n`;
+            body += "```text\n";
+
+            for (const commit of commits) {
+              body += `${commit.commit.message}\n\n`;
+            }
+
+            body += "```\n";
+            body += "</details>\n\n";
+            body += "---\n\n";
+            body += "<sub>Generated automatically from PR metadata.</sub>";
+
+            core.setOutput("body", body);
+
+            const now = new Date();
+            const dateStr = now.toISOString().split("T")[0];
+
+            const version = pr.head.ref.replace(
+              /[^a-zA-Z0-9.-]/g,
+              "-"
+            );
+
+            const sectionTitles = {
+              feat: "Added",
+              fix: "Fixed",
+              refactor: "Changed",
+              perf: "Changed",
+              docs: "Changed",
+              test: "Changed",
+              chore: "Changed",
+              ci: "Changed",
+              style: "Changed",
+              build: "Changed",
+              revert: "Removed",
+              other: "Changed"
+            };
+
+            let changelogEntry = "";
+
+            for (const [type, items] of Object.entries(groups)) {
+              if (!items.length) continue;
+
+              changelogEntry += `### ${sectionTitles[type]}\n\n`;
+
+              for (const item of items) {
+                const scope = item.scope
+                  ? `**${item.scope}:** `
+                  : "";
+
+                changelogEntry += `- ${scope}${item.description} ([\`${item.sha}\`](${item.url}))\n`;
+              }
+
+              changelogEntry += "\n";
+            }
+
+            core.setOutput("changelog", changelogEntry);
+            core.setOutput("version", version);
+            core.setOutput("date", dateStr);
+
+      - name: Create or update PR comment
+        uses: actions/github-script@v7
+        env:
+          BODY: ${{ steps.summary.outputs.body }}
+        with:
+          script: |
+            const marker = "<!-- pr-summary -->";
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number:
+                  context.payload.pull_request.number
+              }
+            );
+
+            const existing = comments.find(comment =>
+              comment.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: process.env.BODY
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number:
+                  context.payload.pull_request.number,
+                body: process.env.BODY
+              });
+            }
+
+      - name: Update CHANGELOG.md
+        if: steps.detect.outputs.is_fork == 'false'
+        env:
+          VERSION: ${{ steps.summary.outputs.version }}
+          DATE: ${{ steps.summary.outputs.date }}
+          ENTRY: ${{ steps.summary.outputs.changelog }}
+        run: |
+          node <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+
+          const changelogPath = path.join(
+            process.cwd(),
+            'CHANGELOG.md'
+          );
+
+          const version = process.env.VERSION;
+          const date = process.env.DATE;
+          const entry = process.env.ENTRY;
+
+          const header = `# Changelog
+
+          All notable changes to this project will be documented in this file.
+
+          The format is based on Keep a Changelog,
+          and this project adheres to Semantic Versioning.
+
+          `;
+
+          const newEntry = `## [${version}] - ${date}
+
+          ${entry}
+          `;
+
+          let content = header;
+
+          if (fs.existsSync(changelogPath)) {
+            content = fs.readFileSync(
+              changelogPath,
+              'utf8'
+            );
+
+            if (!content.startsWith('# Changelog')) {
+              content = header + content;
+            }
+          }
+
+          const lines = content.split('\n');
+
+          let insertIndex = 0;
+
+          for (let i = 0; i < lines.length; i++) {
+            if (
+              lines[i].includes('Semantic Versioning')
+            ) {
+              insertIndex = i + 1;
+
+              while (
+                insertIndex < lines.length &&
+                lines[insertIndex].trim() === ''
+              ) {
+                insertIndex++;
+              }
+
+              break;
+            }
+          }
+
+          lines.splice(insertIndex, 0, '', newEntry);
+
+          fs.writeFileSync(
+            changelogPath,
+            lines.join('\n')
+          );
+
+          console.log('CHANGELOG.md updated');
+          EOF
+
+      - name: Commit CHANGELOG.md
+        if: steps.detect.outputs.is_fork == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git remote set-url origin \
+            https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git
+
+          git add CHANGELOG.md
+
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+
+          git commit -m \
+            "docs: update CHANGELOG.md for PR #${{ github.event.pull_request.number }}"
+
+          git push \
+            origin HEAD:${{ github.event.pull_request.head.ref }}

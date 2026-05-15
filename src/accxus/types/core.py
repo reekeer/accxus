@@ -75,6 +75,7 @@ class AppConfig(BaseModel):
     tg_device_model: str = "Telegram Desktop"
     tg_system_version: str = "Windows 11"
     telegram_proxy: ProxyConfig | None = None
+    active_session: str | None = None
     proxies: list[ProxyConfig] = Field(default_factory=list)
 
     sms_providers: dict[str, SmsProviderConfig] = Field(

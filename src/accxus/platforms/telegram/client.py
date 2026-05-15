@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from pyrogram import Client  # type: ignore[import-untyped]
 
 import accxus.config as cfg
+from accxus.platforms.telegram import sessions as tg_sessions
 from accxus.types.core import ProxyConfig
 from accxus.types.telegram import SessionInfo, SessionStatus
 from accxus.utils.session_convert import detect_kind
@@ -26,6 +27,10 @@ def make_client(
     workdir: str | None = None,
 ) -> Client:
     from pyrogram import Client as _Client  # type: ignore[import-untyped]
+
+    dc_id = tg_sessions.hydrate_session_dc_metadata(session_name)
+    if dc_id is not None:
+        log.debug("[tg] session %s uses dc_id=%s", session_name, dc_id)
 
     _proxy = proxy or cfg.config.telegram_proxy
     return _Client(  # type: ignore[reportCallIssue]
@@ -68,6 +73,7 @@ async def fetch_info(
 ) -> SessionInfo:
     async with connected(session_name, proxy=proxy) as client:
         me = await client.get_me()
+        dc_id = await client.storage.dc_id()
         try:
             chat = await client.get_chat(me.id)
             bio: str = getattr(chat, "bio", "") or ""
@@ -82,6 +88,8 @@ async def fetch_info(
             last_name=me.last_name or "",
             username=me.username or "",
             bio=bio,
+            user_id=me.id,
+            dc_id=dc_id,
             kind=kind,
             status=SessionStatus.VALID,
         )
@@ -100,7 +108,10 @@ async def check_validity(
     try:
         async with connected(session_name, proxy=proxy) as client:
             me = await client.get_me()
-            return SessionStatus.VALID if me else SessionStatus.INVALID
+            if me:
+                tg_sessions.update_metadata_dc_id(session_name, await client.storage.dc_id())
+                return SessionStatus.VALID
+            return SessionStatus.INVALID
     except (AuthKeyUnregistered, UserDeactivated, UserDeactivatedBan):
         return SessionStatus.INVALID
     except Exception:

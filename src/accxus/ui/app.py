@@ -5,23 +5,23 @@ import datetime
 import logging
 from typing import Any
 
-from rigi.core.app import RigiApp
+from rigi.core.app import App
 from rigi.core.settings_manager import Setting
 from rigi.core.types import TabDef
-from rigi.layout.pane import RigiCard, RigiPane
-from rigi.widgets import Label, RigiBottomPanel
+from rigi.widgets import BottomPanel
+from rigi.widgets.action_menu import ActionMenuPanel
+from textual.events import Click
 
 import accxus.config as cfg
 from accxus import __version__
-from accxus.ui.proxy.add import AddProxyTab
-from accxus.ui.proxy.checker import ProxyCheckerTab
-from accxus.ui.proxy.view import ViewProxiesTab
+from accxus.ui.proxy.proxies_tab import ProxiesTab
 from accxus.ui.sms.providers import SmsProvidersTab
 from accxus.ui.sms.services import SmsServicesTab
-from accxus.ui.tg.add_session import AddSessionTab
 from accxus.ui.tg.messages import MessagesTab
 from accxus.ui.tg.parsing import ParsingTab
+from accxus.ui.tg.registration import RegistrationTab
 from accxus.ui.tg.sessions import SessionsTab
+from accxus.ui.utils.telegram_tab import TelegramTab
 
 log = logging.getLogger(__name__)
 
@@ -35,19 +35,9 @@ def _proxy_status() -> str:
     return proxy.display_name
 
 
-def _make_tg_welcome() -> RigiPane:
-    return RigiPane(
-        RigiCard(
-            Label("[dim]Choose a subtab from the left panel[/dim]"),
-            Label("  Sessions  ·  Messages  ·  Parsing"),
-            title="  Telegram",
-        )
-    )
-
-
-def _write(app_: RigiApp, text: str) -> None:
+def _write(app_: App, text: str) -> None:
     try:
-        app_.query_one(RigiBottomPanel).write_output(text)
+        app_.query_one(BottomPanel).write_output(text)
     except Exception:
         app_.notify(text)
 
@@ -79,8 +69,31 @@ def _write_system_version(v: str) -> None:
     cfg.save_config(cfg.config)
 
 
-def _build_app() -> RigiApp:
-    app = RigiApp(
+class AccxusApp(App):
+    CSS = """
+    StatusBar {
+        width: 100%;
+        background: #161b22;
+        color: #c9d1d9;
+        border-bottom: solid #30363d;
+    }
+    StatusBarItem {
+        width: auto;
+        color: #c9d1d9;
+    }
+    """
+
+    def on_click(self, event: Click) -> None:
+        try:
+            panel = self.query_one("#rigi-action-panel", ActionMenuPanel)
+            if not panel.region.contains(event.screen_x, event.screen_y):
+                panel.remove()
+        except Exception:
+            pass
+
+
+def _build_app() -> App:
+    app = AccxusApp(
         name="accxus",
         version=__version__,
         description="Telegram session manager",
@@ -98,38 +111,32 @@ def _build_app() -> RigiApp:
         "SMS",
         lambda: _sms_balance,
         refresh_interval=30.0,
-        style="bold cyan",
     )
     app.add_status(
         "proxy",
         "Proxy",
         _proxy_status,
         refresh_interval=2.0,
-        style="bold green",
     )
 
-    tg_tab = TabDef(name="Telegram", key="1", icon="", widget_factory=_make_tg_welcome)
-
-    sess_sub = tg_tab.add_subtab("Sessions", SessionsTab, icon="")
-    sess_sub.add_subtab("View", SessionsTab, icon="")
-    sess_sub.add_subtab("Add", AddSessionTab, icon="")
-
-    msg_sub = tg_tab.add_subtab("Messages", MessagesTab, icon="")
-    msg_sub.add_subtab("Bulk", MessagesTab, icon="")
-
-    tg_tab.add_subtab("Parsing", ParsingTab, icon="")
+    tg_tab = TabDef(name="Telegram", key="1", icon="\uf2c6", widget_factory=SessionsTab)
+    tg_tab.add_subtab("Sessions", SessionsTab, icon="\uf0c0")
+    tg_tab.add_subtab("Messages", MessagesTab, icon="\uf0e0")
+    tg_tab.add_subtab("Parsing", ParsingTab, icon="\uf002")
+    tg_tab.add_subtab("Registration", RegistrationTab, icon="\uf234")
     app.add_tab(tg_tab)
 
-    proxy_tab = TabDef(name="Proxies", key="2", icon="🌐")
-    proxy_tab.add_subtab("Check", ProxyCheckerTab, icon="")
-    proxy_tab.add_subtab("Add", AddProxyTab, icon="")
-    proxy_tab.add_subtab("View", ViewProxiesTab, icon="")
+    proxy_tab = TabDef(name="Proxies", key="2", icon="\uf0ac", widget_factory=ProxiesTab)
     app.add_tab(proxy_tab)
 
-    sms_tab = TabDef(name="SMS", key="3", icon="📱")
+    sms_tab = TabDef(name="SMS", key="3", icon="\uf10b")
     sms_tab.add_subtab("Providers", SmsProvidersTab, icon="")
     sms_tab.add_subtab("Services", SmsServicesTab, icon="")
     app.add_tab(sms_tab)
+
+    utils_tab = TabDef(name="Utils", key="4", icon="\uf0ad")
+    utils_tab.add_subtab("Telegram", TelegramTab, icon="\uf2c6")
+    app.add_tab(utils_tab)
 
     tg_settings = app.settings.add_page("Telegram")
     tg_settings.settings = [
@@ -168,9 +175,41 @@ def _build_app() -> RigiApp:
         Setting("Maintainer", value_fn=lambda: "@xeltorV"),
     ]
 
+    def _sms_api_key_fn(provider: str) -> str:
+        return cfg.config.sms_providers.get(provider, {}).api_key or ""
+
+    def _write_sms_api_key(provider: str, v: str) -> None:
+        if provider in cfg.config.sms_providers:
+            cfg.config.sms_providers[provider].api_key = v
+            cfg.save_config(cfg.config)
+
+    sms_settings = app.settings.add_page("SMS")
+    sms_settings.settings = [
+        Setting(
+            "SMS Activate",
+            value_fn=lambda: _sms_api_key_fn("sms_activate"),
+            write_fn=lambda v: _write_sms_api_key("sms_activate", v),
+        ),
+        Setting(
+            "HeroSMS",
+            value_fn=lambda: _sms_api_key_fn("herosms"),
+            write_fn=lambda v: _write_sms_api_key("herosms", v),
+        ),
+        Setting(
+            "5sim",
+            value_fn=lambda: _sms_api_key_fn("fivesim"),
+            write_fn=lambda v: _write_sms_api_key("fivesim", v),
+        ),
+        Setting(
+            "SMSPool",
+            value_fn=lambda: _sms_api_key_fn("smspool"),
+            write_fn=lambda v: _write_sms_api_key("smspool", v),
+        ),
+    ]
+
     @app.on_startup
     async def _balance_loop(  # pyright: ignore[reportUnusedFunction,reportUnusedParameter]
-        app_: RigiApp,
+        app_: App,
     ) -> None:
         global _sms_balance
         while True:
@@ -189,7 +228,7 @@ def _build_app() -> RigiApp:
 
     @app.command("session", help="Manage sessions: list / check / delete <name>")
     async def _cmd_session(  # pyright: ignore[reportUnusedFunction]
-        app: RigiApp, _arg0: str = "list", _arg1: str = "", **_: Any
+        app: App, _arg0: str = "list", _arg1: str = "", **_: Any
     ) -> None:
         action = _arg0 or "list"
         target = _arg1 or ""
@@ -205,7 +244,9 @@ def _build_app() -> RigiApp:
             for s in sessions:
                 color = "green" if s.status.value == "valid" else "red"
                 name_part = f"[cyan]{s.name}[/cyan]"
-                phone_part = f"[dim]{s.phone or '?'} · @{s.username or '—'}[/dim]"
+                phone_part = (
+                    f"[dim]{s.phone or '?'} · @{s.username or '—'} · DC {s.dc_id or '—'}[/dim]"
+                )
                 _write(app, f"  [{color}]●[/{color}] {name_part}  {phone_part}")
 
         elif action == "check":
@@ -244,7 +285,7 @@ def _build_app() -> RigiApp:
             _write(app, "  [cyan]session delete <name>[/cyan] delete a session")
 
     @app.command("balance", help="Fetch SMS provider balance(s)", aliases=["bal"])
-    async def _cmd_balance(app: RigiApp, **_: Any) -> None:  # pyright: ignore[reportUnusedFunction]
+    async def _cmd_balance(app: App, **_: Any) -> None:  # pyright: ignore[reportUnusedFunction]
         global _sms_balance
         from accxus.core.sms.manager import SmsManager
 
@@ -267,7 +308,7 @@ def _build_app() -> RigiApp:
 
     @app.command("message", help="Send message: message <session> <target> <text>", aliases=["msg"])
     async def _cmd_message(  # pyright: ignore[reportUnusedFunction]
-        app: RigiApp, args: dict[str, Any]
+        app: App, args: dict[str, Any]
     ) -> None:
         session = str(args.get("_arg0", "") or "").strip()
         target = str(args.get("_arg1", "") or "").strip()
@@ -294,7 +335,7 @@ def _build_app() -> RigiApp:
 
     @app.command("proxy", help="Proxy management: list / check / set <url>")
     async def _cmd_proxy(  # pyright: ignore[reportUnusedFunction]
-        app: RigiApp, _arg0: str = "list", _arg1: str = "", _arg2: str = "", **_: Any
+        app: App, _arg0: str = "list", _arg1: str = "", _arg2: str = "", **_: Any
     ) -> None:
         action = _arg0 or "list"
         url = _arg1 or ""
@@ -405,18 +446,16 @@ def _build_app() -> RigiApp:
             _write(app, "  [cyan]proxy unset[/cyan]           remove proxy")
 
     @app.command("sessions", help="Go to Sessions tab", aliases=["sess"])
-    async def _cmd_sessions(  # pyright: ignore[reportUnusedFunction]
-        app: RigiApp, **_: Any
-    ) -> None:
+    async def _cmd_sessions(app: App, **_: Any) -> None:  # pyright: ignore[reportUnusedFunction]
         app.navigate_to_tab("Telegram")
 
     @app.command("logs", help="Open the live log viewer")
-    async def _cmd_logs(app: RigiApp, **_: Any) -> None:  # pyright: ignore[reportUnusedFunction]
+    async def _cmd_logs(app: App, **_: Any) -> None:  # pyright: ignore[reportUnusedFunction]
         app.navigate_to_tab("Logs")
 
     @app.command("crash", help="Emergency kill: crash yes — stop all tasks and exit immediately")
     async def _cmd_crash(  # pyright: ignore[reportUnusedFunction]
-        app: RigiApp, _arg0: str = "", **_: Any
+        app: App, _arg0: str = "", **_: Any
     ) -> None:
         confirm = _arg0 or ""
         if confirm.lower() != "yes":
@@ -435,7 +474,7 @@ def _build_app() -> RigiApp:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     app = _build_app()
-    RigiApp.run_cli(app)
+    App.run_cli(app)
 
 
 if __name__ == "__main__":

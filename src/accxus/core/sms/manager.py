@@ -127,6 +127,25 @@ class SmsManager:
         pairs = await asyncio.gather(*(_one(p) for p in targets))
         return dict(pairs)
 
+    async def list_countries_for_service(
+        self, service: str, provider: str | None = None
+    ) -> dict[str, list[tuple[int, str, float]]]:
+        import asyncio
+
+        targets = (
+            [p for p in self._providers if p.name == provider] if provider else self._providers
+        )
+
+        async def _one(p: AbstractSmsProvider) -> tuple[str, list[tuple[int, str, float]]]:
+            try:
+                return p.name, await p.list_countries_for_service(service)
+            except Exception as e:
+                log.warning(f"[{p.name}] list_countries_for_service failed: {e}")
+                return p.name, []
+
+        pairs = await asyncio.gather(*(_one(p) for p in targets))
+        return dict(pairs)
+
     def _find(self, name: str) -> AbstractSmsProvider:
         for p in self._providers:
             if p.name == name:

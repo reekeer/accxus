@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rigi import ComposeResult, Widget
-from rigi.layout.pane import RigiCard, RigiPane
+from rigi.layout.pane import Card, Pane
 from rigi.widgets import Button, DataTable, Input, Label, Select, Switch
 
 import accxus.config as cfg
@@ -26,15 +26,15 @@ class SmsProvidersTab(Widget):
     """
 
     def compose(self) -> ComposeResult:
-        yield RigiPane(
-            RigiCard(
+        yield Pane(
+            Card(
                 Label("[bold cyan]SMS Providers[/bold cyan]"),
                 Label("[dim]Manage SMS provider configuration[/dim]"),
                 Button("Check All Balances", id="check_balances_btn", variant="primary"),
                 Button("Refresh", id="refresh_providers_btn", variant="default"),
                 title="  SMS Providers",
             ),
-            RigiCard(
+            Card(
                 DataTable(
                     id="providers_table",
                     cursor_type="row",
@@ -42,7 +42,7 @@ class SmsProvidersTab(Widget):
                 ),
                 title="  Configured Providers",
             ),
-            RigiCard(
+            Card(
                 Label("[bold]Edit Provider Configuration[/bold]"),
                 Label("\n[bold]Provider:[/bold]"),
                 Select(
@@ -55,8 +55,6 @@ class SmsProvidersTab(Widget):
                     ],
                     value="sms_activate",
                 ),
-                Label("\n[bold]API Key:[/bold]"),
-                Input(placeholder="Enter API key", id="provider_api_key", password=True),
                 Label("\n[bold]Priority (0-100, lower = higher priority):[/bold]"),
                 Input(placeholder="50", id="provider_priority"),
                 Label("\n[bold]Timeout (seconds):[/bold]"),
@@ -129,7 +127,6 @@ class SmsProvidersTab(Widget):
         if not config_data:
             return
         config = SmsProviderConfig(**config_data) if isinstance(config_data, dict) else config_data
-        self.query_one("#provider_api_key", Input).value = config.api_key
         self.query_one("#provider_priority", Input).value = str(config.priority)
         self.query_one("#provider_timeout", Input).value = str(config.timeout)
         self.query_one("#provider_enabled", Switch).value = config.enabled
@@ -140,7 +137,6 @@ class SmsProvidersTab(Widget):
             if not provider_name:
                 self.notify("Select a provider first", severity="warning")
                 return
-            api_key = self.query_one("#provider_api_key", Input).value.strip()
             priority_str = self.query_one("#provider_priority", Input).value.strip()
             timeout_str = self.query_one("#provider_timeout", Input).value.strip()
             enabled = self.query_one("#provider_enabled", Switch).value
@@ -154,7 +150,6 @@ class SmsProvidersTab(Widget):
                 if isinstance(existing, dict)
                 else (existing or SmsProviderConfig())
             )
-            config.api_key = api_key
             config.priority = priority
             config.timeout = timeout
             config.enabled = enabled

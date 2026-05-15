@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rigi import ComposeResult, Widget
-from rigi.layout.pane import RigiCard, RigiPane
+from rigi.layout.pane import Card, Pane
 from rigi.widgets import Button, DataTable, Input, Label
 
 from accxus.core.proxy.checker import check_proxy
@@ -20,8 +20,8 @@ class ProxyCheckerTab(Widget):
     """
 
     def compose(self) -> ComposeResult:
-        yield RigiPane(
-            RigiCard(
+        yield Pane(
+            Card(
                 Label("[bold cyan]Proxy Checker[/bold cyan]"),
                 Label("[dim]Test proxy connectivity and measure latency[/dim]"),
                 Input(
@@ -31,7 +31,7 @@ class ProxyCheckerTab(Widget):
                 Button("Check Proxy", id="check_proxy_btn", variant="primary"),
                 title="  Check Proxy",
             ),
-            RigiCard(
+            Card(
                 DataTable(
                     id="proxy_check_results",
                     cursor_type="row",
