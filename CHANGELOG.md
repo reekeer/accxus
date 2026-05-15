@@ -7,6 +7,27 @@ and this project adheres to Semantic Versioning.
 
 
 
+
+## [dev] - 2026-05-15
+
+### Added
+
+- **pyproject:** add more information, migrate to uv_build ([`c8bd691`](https://github.com/reekeer/accxus/commit/c8bd6913c759807ee441bcf4e3ac3b9fa59e71fd))
+
+### Changed
+
+- bump version to 0.4.1 ([`f304238`](https://github.com/reekeer/accxus/commit/f304238c48a739c5bce6004f33287996737b0a88))
+
+### Changed
+
+- add release and pr checks workflows ([`b0303d0`](https://github.com/reekeer/accxus/commit/b0303d091191eb19536c8696d9259faf16efc0d4))
+
+### Changed
+
+- **pyproject:** add rigi@v1.3.3 to  dependencies ([`adcce84`](https://github.com/reekeer/accxus/commit/adcce8483eb117029476367936643bcba06d8b80))
+
+
+
 ## [dev] - 2026-05-15
 
 ### Added

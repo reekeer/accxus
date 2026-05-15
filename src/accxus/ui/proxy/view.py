@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import contextlib
-from textual.events import Click, MouseDown
+
 from rigi import ComposeResult, Widget
 from rigi.widgets import (
     ActionMenuItemData,
     Button,
     DataTable,
 )
+from textual.events import Click, MouseDown
 
 import accxus.config as cfg
 from accxus.core.proxy.checker import check_proxy, lookup_proxy_country
@@ -218,7 +219,9 @@ class ViewProxiesTab(Widget):
             if self._proxy_key(p) == self._proxy_key(proxy):
                 cfg.config.proxies[i] = proxy
                 break
-        if cfg.config.telegram_proxy and self._proxy_key(cfg.config.telegram_proxy) == self._proxy_key(proxy):
+        if cfg.config.telegram_proxy and self._proxy_key(
+            cfg.config.telegram_proxy
+        ) == self._proxy_key(proxy):
             cfg.config.telegram_proxy = proxy
         cfg.save_config(cfg.config)
 
