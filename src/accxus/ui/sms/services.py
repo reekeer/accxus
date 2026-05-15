@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rigi import ComposeResult, Widget
-from rigi.layout.pane import RigiCard, RigiPane
+from rigi.layout.pane import Card, Pane
 from rigi.widgets import Button, DataTable, Label, Select
 
 import accxus.config as cfg
@@ -21,8 +21,8 @@ class SmsServicesTab(Widget):
     """
 
     def compose(self) -> ComposeResult:
-        yield RigiPane(
-            RigiCard(
+        yield Pane(
+            Card(
                 Label("[bold cyan]SMS Services[/bold cyan]"),
                 Label("[dim]View available services from SMS providers[/dim]"),
                 Label("\n[bold]Provider:[/bold]"),
@@ -34,7 +34,7 @@ class SmsServicesTab(Widget):
                 Button("Refresh Services", id="refresh_services_btn", variant="primary"),
                 title="  SMS Services",
             ),
-            RigiCard(
+            Card(
                 DataTable(
                     id="services_table",
                     cursor_type="row",

@@ -66,8 +66,10 @@ def update_metadata(session_name: str, info: SessionInfo) -> None:
         "kind": info.kind.name,
         "status": info.status.value,
     }
+    if info.user_id is not None:
+        data["user_id"] = str(info.user_id)
     if info.dc_id is not None:
-        data["dc_id"] = info.dc_id
+        data["dc_id"] = str(info.dc_id)
     meta.setdefault(session_name, {}).update(data)
     save_metadata(meta)
 
@@ -136,6 +138,7 @@ def list_sessions() -> list[SessionInfo]:
                 last_name=m.get("last_name", ""),
                 username=m.get("username", ""),
                 bio=m.get("bio", ""),
+                user_id=m.get("user_id"),
                 dc_id=_coerce_dc_id(m.get("dc_id")) or read_session_dc_id(name),
                 kind=kind,
                 status=status,

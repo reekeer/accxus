@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import tempfile
 from pathlib import Path
 
 from accxus.platforms.telegram.client import connected, fetch_info
@@ -43,6 +44,21 @@ async def set_avatar(session_name: str, photo_path: str | Path) -> None:
     async with connected(session_name) as client:
         await client.set_profile_photo(photo=str(path))
     log.info(f"[profile] {session_name!r} avatar updated from {path.name!r}")
+
+
+async def download_avatar(session_name: str, dest_dir: Path | None = None) -> Path | None:
+    async with connected(session_name) as client:
+        me = await client.get_me()
+        photos = []
+        async for photo in client.get_chat_photos(me.id):  # type: ignore[reportGeneralTypeIssues]
+            photos.append(photo)
+            break
+        if not photos:
+            return None
+        photo = photos[0]
+        dest = Path(dest_dir or tempfile.gettempdir()) / f"{session_name}_avatar.jpg"
+        await client.download_media(photo.file_id, file_name=str(dest))  # type: ignore[reportGeneralTypeIssues]
+        return dest
 
 
 async def delete_avatar(session_name: str) -> None:

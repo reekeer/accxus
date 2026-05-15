@@ -88,6 +88,7 @@ async def fetch_info(
             last_name=me.last_name or "",
             username=me.username or "",
             bio=bio,
+            user_id=me.id,
             dc_id=dc_id,
             kind=kind,
             status=SessionStatus.VALID,

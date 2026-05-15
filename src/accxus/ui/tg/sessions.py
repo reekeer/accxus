@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+from pathlib import Path
 from typing import Any
 
 from rigi import ComposeResult, ModalScreen, Widget
 from rigi.widgets import (
+    ActionMenuItemData,
     Button,
     DataTable,
+    Image,
     Input,
     Label,
     Static,
 )
+from textual.events import Click, MouseDown
 
+import accxus.config as cfg
 from accxus.platforms.telegram import (
     client as tg_client,
 )
@@ -27,6 +33,9 @@ from accxus.types import SessionInfo, SessionStatus
 log = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# LoginScreen
+# ---------------------------------------------------------------------------
 class LoginScreen(ModalScreen[str | None]):
     DEFAULT_CSS = """
     LoginScreen { align: center middle; }
@@ -41,8 +50,6 @@ class LoginScreen(ModalScreen[str | None]):
     #lbox Input { margin-bottom: 1; }
     #lbtn_row { layout: horizontal; height: auto; margin-top: 1; }
     #lbtn_row Button { margin-right: 1; }
-    #code_row, #twofa_row { display: none; }
-    #code_row.show, #twofa_row.show { display: block; }
     """
 
     def __init__(self) -> None:
@@ -56,17 +63,27 @@ class LoginScreen(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         with Widget(id="lbox"):
             yield Label("[bold] Add New Telegram Session[/bold]\n")
-            yield Input(placeholder="Session name  (e.g. main)", id="inp_name")
-            yield Input(placeholder="Phone  (+79001234567)", id="inp_phone")
-            yield Button("Send Code", id="btn_send", variant="primary")
-            with Widget(id="code_row"):
+            with Widget(id="step1"):
+                yield Input(placeholder="Session name  (e.g. main)", id="inp_name")
+                yield Input(placeholder="Phone  (+79001234567)", id="inp_phone")
+                yield Button("Send Code", id="btn_send", variant="primary")
+            with Widget(id="step2"):
                 yield Input(placeholder="Code from Telegram app", id="inp_code")
-            with Widget(id="twofa_row"):
+            with Widget(id="step3"):
                 yield Input(placeholder="2FA password", id="inp_2fa", password=True)
             with Widget(id="lbtn_row"):
                 yield Button("Login", id="btn_login", variant="success", disabled=True)
                 yield Button("Cancel", id="btn_cancel")
             yield Static("", id="lstat")
+
+    def on_mount(self) -> None:
+        self.query_one("#step2").styles.display = "none"
+        self.query_one("#step3").styles.display = "none"
+
+    def _show_step(self, step: int) -> None:
+        for i in (1, 2, 3):
+            widget = self.query_one(f"#step{i}", Widget)
+            widget.styles.display = "block" if i == step else "none"
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
@@ -102,7 +119,7 @@ class LoginScreen(ModalScreen[str | None]):
             await self._client.connect()
             sent = await self._client.send_code(phone)
             self._hash = sent.phone_code_hash
-            self.query_one("#code_row").add_class("show")
+            self._show_step(2)
             self.query_one("#btn_login", Button).disabled = False
             stat.update(f"[green]Code sent to {phone} — enter it below[/green]")
         except FloodWait as e:
@@ -146,7 +163,7 @@ class LoginScreen(ModalScreen[str | None]):
                 )
             except SessionPasswordNeeded:
                 self._needs_2fa = True
-                self.query_one("#twofa_row").add_class("show")
+                self._show_step(3)
                 self.query_one("#btn_login", Button).disabled = False
                 stat.update("[yellow]2FA enabled — enter password above, then click Login[/yellow]")
                 return
@@ -187,6 +204,7 @@ class LoginScreen(ModalScreen[str | None]):
                 first_name=me.first_name or "",
                 last_name=me.last_name or "",
                 username=me.username or "",
+                user_id=me.id,
                 dc_id=await self._client.storage.dc_id(),
             )
             tg_sessions.update_metadata(self._name, info)
@@ -198,6 +216,9 @@ class LoginScreen(ModalScreen[str | None]):
             stat.update(f"[red]{e}[/red]")
 
 
+# ---------------------------------------------------------------------------
+# ImportSessionScreen
+# ---------------------------------------------------------------------------
 class ImportSessionScreen(ModalScreen[str | None]):
     DEFAULT_CSS = """
     ImportSessionScreen { align: center middle; }
@@ -231,7 +252,6 @@ class ImportSessionScreen(ModalScreen[str | None]):
             await self._do_import()
 
     async def _do_import(self) -> None:
-        from pathlib import Path
 
         src_raw = self.query_one("#inp_src", Input).value.strip()
         name = self.query_one("#inp_name", Input).value.strip()
@@ -251,16 +271,87 @@ class ImportSessionScreen(ModalScreen[str | None]):
             self.query_one("#btn_imp", Button).disabled = False
 
 
-class EditProfileScreen(ModalScreen[bool]):
+# ---------------------------------------------------------------------------
+# RenameScreen
+# ---------------------------------------------------------------------------
+class RenameScreen(ModalScreen[str | None]):
     DEFAULT_CSS = """
-    EditProfileScreen { align: center middle; }
-    #ep_box {
-        width: 56;
+    RenameScreen { align: center middle; }
+    #ren_box {
+        width: 50;
         height: auto;
         border: round $primary;
         padding: 1 2;
         background: $surface;
     }
+    #ren_box Input { margin-bottom: 1; }
+    #ren_row { layout: horizontal; height: auto; margin-top: 1; }
+    #ren_row Button { margin-right: 1; }
+    """
+
+    def __init__(self, old_name: str) -> None:
+        super().__init__()
+        self._old_name = old_name
+
+    def compose(self) -> ComposeResult:
+        with Widget(id="ren_box"):
+            yield Label(f"[bold] Rename — {self._old_name}[/bold]\n")
+            yield Input(placeholder="New session name", id="inp_name")
+            with Widget(id="ren_row"):
+                yield Button("Rename", id="btn_rename", variant="success")
+                yield Button("Cancel", id="btn_cancel")
+            yield Static("", id="ren_stat")
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn_cancel":
+            self.dismiss(None)
+        elif event.button.id == "btn_rename":
+            new_name = self.query_one("#inp_name", Input).value.strip()
+            stat = self.query_one("#ren_stat", Static)
+            if not new_name:
+                stat.update("[red]Enter a name[/red]")
+                return
+            old_path = tg_sessions.session_path(self._old_name)
+            new_path = tg_sessions.session_path(new_name)
+            if new_path.exists():
+                stat.update("[red]Name already exists[/red]")
+                return
+            old_path.rename(new_path)
+            meta = tg_sessions.load_metadata()
+            if self._old_name in meta:
+                meta[new_name] = meta.pop(self._old_name)
+                tg_sessions.save_metadata(meta)
+            self.dismiss(new_name)
+
+
+# ---------------------------------------------------------------------------
+# EditProfileScreen
+# ---------------------------------------------------------------------------
+class EditProfileScreen(ModalScreen[bool]):
+    DEFAULT_CSS = """
+    EditProfileScreen { align: center middle; }
+    #ep_box {
+        width: 60;
+        height: auto;
+        border: round $primary;
+        padding: 1 2;
+        background: $surface;
+    }
+    #ep_avatar_row {
+        layout: horizontal;
+        height: auto;
+        margin-bottom: 1;
+    }
+    #ep_avatar_img {
+        width: 12;
+        height: 6;
+        margin-right: 2;
+    }
+    #ep_avatar_btns {
+        width: 1fr;
+        height: auto;
+    }
+    #ep_avatar_btns Button { margin-bottom: 1; }
     #ep_box Input { margin-bottom: 1; }
     #ep_row { layout: horizontal; height: auto; margin-top: 1; }
     #ep_row Button { margin-right: 1; }
@@ -274,19 +365,70 @@ class EditProfileScreen(ModalScreen[bool]):
     def compose(self) -> ComposeResult:
         with Widget(id="ep_box"):
             yield Label(f"[bold] Edit Profile — {self._session}[/bold]\n")
-            yield Input(value=self._info.first_name, placeholder="First name", id="inp_first")
-            yield Input(value=self._info.last_name, placeholder="Last name", id="inp_last")
-            yield Input(value=self._info.bio, placeholder="Bio", id="inp_bio")
+            with Widget(id="ep_avatar_row"):
+                yield Image(id="ep_avatar_img", width=12, height=6)
+                with Widget(id="ep_avatar_btns"):
+                    yield Button("Load from TG", id="btn_load_avatar")
+                    yield Input(
+                        placeholder="Path to new avatar",
+                        id="inp_avatar_path",
+                    )
+                    yield Button("Set Avatar", id="btn_set_avatar", variant="primary")
+                    yield Button("Delete Avatar", id="btn_del_avatar", variant="error")
+            yield Input(
+                value=self._info.first_name,
+                placeholder="First name",
+                id="inp_first",
+            )
+            yield Input(
+                value=self._info.last_name,
+                placeholder="Last name",
+                id="inp_last",
+            )
+            yield Input(
+                value=self._info.username or "",
+                placeholder="Username",
+                id="inp_username",
+                disabled=True,
+            )
+            yield Input(
+                value=self._info.bio,
+                placeholder="Bio",
+                id="inp_bio",
+            )
+            yield Input(
+                placeholder="Date of birth (not editable)",
+                id="inp_dob",
+                disabled=True,
+            )
             with Widget(id="ep_row"):
                 yield Button("Save", id="btn_save", variant="success")
                 yield Button("Cancel", id="btn_cancel")
             yield Static("", id="ep_stat")
 
+    def on_mount(self) -> None:
+        self.run_worker(self._load_avatar())
+
+    async def _load_avatar(self) -> None:
+        try:
+            path = await tg_profile.download_avatar(self._session)
+            if path:
+                self.query_one("#ep_avatar_img", Image).load(path)
+        except Exception:
+            pass
+
     async def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn_cancel":
+        bid = event.button.id
+        if bid == "btn_cancel":
             self.dismiss(False)
-        elif event.button.id == "btn_save":
+        elif bid == "btn_save":
             await self._save()
+        elif bid == "btn_load_avatar":
+            self.run_worker(self._load_avatar())
+        elif bid == "btn_set_avatar":
+            self.run_worker(self._set_avatar())
+        elif bid == "btn_del_avatar":
+            self.run_worker(self._delete_avatar())
 
     async def _save(self) -> None:
         first = self.query_one("#inp_first", Input).value.strip()
@@ -306,143 +448,39 @@ class EditProfileScreen(ModalScreen[bool]):
             stat.update(f"[red]{e}[/red]")
             self.query_one("#btn_save", Button).disabled = False
 
-
-class SetAvatarScreen(ModalScreen[bool]):
-    DEFAULT_CSS = """
-    SetAvatarScreen { align: center middle; }
-    #av_box {
-        width: 60;
-        height: auto;
-        border: round $primary;
-        padding: 1 2;
-        background: $surface;
-    }
-    #av_box Input { margin-bottom: 1; }
-    #av_row { layout: horizontal; height: auto; margin-top: 1; }
-    #av_row Button { margin-right: 1; }
-    """
-
-    def __init__(self, session_name: str) -> None:
-        super().__init__()
-        self._session = session_name
-
-    def compose(self) -> ComposeResult:
-        with Widget(id="av_box"):
-            yield Label(f"[bold] Set Avatar — {self._session}[/bold]\n")
-            yield Label("[dim]Full path to an image file (jpg / png)[/dim]")
-            yield Input(placeholder="/home/user/photo.jpg", id="inp_path")
-            with Widget(id="av_row"):
-                yield Button("Upload", id="btn_upload", variant="success")
-                yield Button("Cancel", id="btn_cancel")
-            yield Static("", id="av_stat")
-
-    async def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn_cancel":
-            self.dismiss(False)
-        elif event.button.id == "btn_upload":
-            await self._upload()
-
-    async def _upload(self) -> None:
-        path = self.query_one("#inp_path", Input).value.strip()
-        stat = self.query_one("#av_stat", Static)
-        stat.update("[dim]Uploading…[/dim]")
-        self.query_one("#btn_upload", Button).disabled = True
+    async def _set_avatar(self) -> None:
+        path = self.query_one("#inp_avatar_path", Input).value.strip()
+        stat = self.query_one("#ep_stat", Static)
+        if not path:
+            stat.update("[red]Enter avatar path[/red]")
+            return
+        stat.update("[dim]Uploading avatar…[/dim]")
         try:
             await tg_profile.set_avatar(self._session, path)
-            stat.update("[green]✓ Avatar updated[/green]")
-            await asyncio.sleep(0.4)
-            self.dismiss(True)
+            stat.update("[green]✓ Avatar set[/green]")
+            self.query_one("#ep_avatar_img", Image).load(path)
         except Exception as e:
             stat.update(f"[red]{e}[/red]")
-            self.query_one("#btn_upload", Button).disabled = False
 
-
-class ExportChatScreen(ModalScreen[bool]):
-    DEFAULT_CSS = """
-    ExportChatScreen { align: center middle; }
-    #ec_box {
-        width: 62;
-        height: auto;
-        border: round $primary;
-        padding: 1 2;
-        background: $surface;
-    }
-    #ec_box Input { margin-bottom: 1; }
-    #ec_row { layout: horizontal; height: auto; margin-top: 1; }
-    #ec_row Button { margin-right: 1; }
-    """
-
-    def __init__(self, session_name: str) -> None:
-        super().__init__()
-        self._session = session_name
-
-    def compose(self) -> ComposeResult:
-        with Widget(id="ec_box"):
-            yield Label(f"[bold] Export Chat — {self._session}[/bold]\n")
-            yield Input(placeholder="Chat: @group / username / chat_id", id="inp_chat")
-            yield Input(placeholder="Output file  (default: export_<chat>.json)", id="inp_out")
-            yield Input(placeholder="Limit messages (blank = all)", id="inp_limit")
-            with Widget(id="ec_row"):
-                yield Button("Export JSON", id="btn_json", variant="success")
-                yield Button("Export TXT", id="btn_txt", variant="primary")
-                yield Button("Cancel", id="btn_cancel")
-            yield Static("", id="ec_stat")
-
-    async def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn_cancel":
-            self.dismiss(False)
-        elif event.button.id in ("btn_json", "btn_txt"):
-            fmt = "json" if event.button.id == "btn_json" else "txt"
-            await self._do_export(fmt)
-
-    async def _do_export(self, fmt: str) -> None:
-        from pathlib import Path
-
-        from accxus.platforms.telegram import parsing as tg_parsing
-
-        chat = self.query_one("#inp_chat", Input).value.strip()
-        out_raw = self.query_one("#inp_out", Input).value.strip()
-        limit_raw = self.query_one("#inp_limit", Input).value.strip()
-        stat = self.query_one("#ec_stat", Static)
-        if not chat:
-            stat.update("[red]Enter a chat username or ID[/red]")
-            return
-        limit = int(limit_raw) if limit_raw.isdigit() else 0
-        dest = Path(out_raw or f"export_{chat.lstrip('@')}.{fmt}")
-        stat.update("[dim]Exporting…[/dim]")
-        for btn_id in ("btn_json", "btn_txt"):
-            self.query_one(f"#{btn_id}", Button).disabled = True
-
-        def _progress(n: int) -> None:
-            stat.update(f"[dim]Fetched {n} messages…[/dim]")
-
+    async def _delete_avatar(self) -> None:
+        stat = self.query_one("#ep_stat", Static)
+        stat.update("[dim]Deleting avatar…[/dim]")
         try:
-            count = await tg_parsing.save_chat_history(
-                self._session, chat, dest, fmt=fmt, limit=limit, on_progress=_progress
-            )
-            stat.update(f"[green]✓ Exported {count} messages → {dest}[/green]")
+            await tg_profile.delete_avatar(self._session)
+            stat.update("[green]✓ Avatar deleted[/green]")
+            self.query_one("#ep_avatar_img", Image).load("")
         except Exception as e:
             stat.update(f"[red]{e}[/red]")
-        finally:
-            for btn_id in ("btn_json", "btn_txt"):
-                self.query_one(f"#{btn_id}", Button).disabled = False
 
 
+# ---------------------------------------------------------------------------
+# SessionsTab
+# ---------------------------------------------------------------------------
 class SessionsTab(Widget):
     DEFAULT_CSS = """
     SessionsTab {
-        layout: horizontal;
         height: 100%;
         width: 100%;
-    }
-    #sess_left {
-        width: 40;
-        height: 100%;
-        padding: 1;
-    }
-    #sess_right {
-        width: 1fr;
-        height: 100%;
         padding: 1 2;
     }
     #sess_top_row {
@@ -452,43 +490,14 @@ class SessionsTab(Widget):
     }
     #sess_top_row Button { margin-right: 1; }
     #sess_table { height: 1fr; }
-    #sess_bot_row {
-        layout: horizontal;
-        height: auto;
-        margin-top: 1;
-    }
-    #sess_bot_row Button { margin-right: 1; }
-    #detail_info { height: auto; margin-bottom: 1; }
-    #action_row {
-        layout: horizontal;
-        height: auto;
-    }
-    #action_row Button { margin-right: 1; margin-bottom: 1; }
     """
 
-    _accessed: str | None = None
-    _info: SessionInfo | None = None
-
     def compose(self) -> ComposeResult:
-        with Widget(id="sess_left"):
-            with Widget(id="sess_top_row"):
-                yield Button("＋ Add", id="btn_add", variant="primary")
-                yield Button("Import", id="btn_import")
-                yield Button("✓ Check All", id="btn_check_all")
-            yield DataTable(id="sess_table", cursor_type="row", zebra_stripes=True)
-            with Widget(id="sess_bot_row"):
-                yield Button("Access", id="btn_access", variant="success")
-                yield Button("Delete", id="btn_delete", variant="error")
-
-        with Widget(id="sess_right"):
-            yield Static(
-                "[dim]Select a session, then click [bold]Access[/bold] to load its info[/dim]",
-                id="detail_info",
-            )
-            with Widget(id="action_row"):
-                yield Button("Edit Profile", id="btn_edit", disabled=True)
-                yield Button("Set Avatar", id="btn_avatar", disabled=True)
-                yield Button("Export Chat", id="btn_export", disabled=True)
+        with Widget(id="sess_top_row"):
+            yield Button("＋ Add", id="btn_add", variant="primary")
+            yield Button("Import", id="btn_import")
+            yield Button("Refresh", id="btn_refresh")
+        yield DataTable(id="sess_table", cursor_type="row", zebra_stripes=True)
 
     def on_mount(self) -> None:
         self._reload_table()
@@ -496,14 +505,23 @@ class SessionsTab(Widget):
     def _reload_table(self) -> None:
         tbl = self.query_one("#sess_table", DataTable)
         tbl.clear(columns=True)
-        tbl.add_column("Session", key="name")
+        tbl.add_column("Name", key="name")
+        tbl.add_column("ID", key="id")
         tbl.add_column("Phone", key="phone")
+        tbl.add_column("Username", key="username")
         tbl.add_column("DC", key="dc")
         tbl.add_column("Status", key="status")
         for info in tg_sessions.list_sessions():
             status_str = self._status_markup(info.status)
+            active_mark = " ●" if cfg.config.active_session == info.name else ""
             tbl.add_row(
-                info.name, info.phone or "—", str(info.dc_id or "—"), status_str, key=info.name
+                f"{info.name}{active_mark}",
+                str(info.user_id or "—"),
+                info.phone or "—",
+                info.username or "—",
+                str(info.dc_id or "—"),
+                status_str,
+                key=info.name,
             )
 
     @staticmethod
@@ -515,51 +533,69 @@ class SessionsTab(Widget):
             SessionStatus.UNKNOWN: "[dim]? unknown[/dim]",
         }.get(s, "[dim]?[/dim]")
 
-    def _selected_name(self) -> str | None:
-        tbl = self.query_one("#sess_table", DataTable)
-        try:
-            key = tbl.coordinate_to_cell_key(tbl.cursor_coordinate).row_key.value
-            return str(key) if key is not None else None
-        except Exception:
-            return None
+    def on_click(self, event: Click) -> None:
+        with contextlib.suppress(Exception):
+            panel = self.app.query_one("#rigi-action-panel")
+            panel.remove()
 
-    def _set_action_btns(self, enabled: bool) -> None:
-        for bid in ("btn_edit", "btn_avatar", "btn_export"):
-            self.query_one(f"#{bid}", Button).disabled = not enabled
+    def on_mouse_down(self, event: MouseDown) -> None:
+        if event.button == 3:
+            event.stop()
+            tbl = self.query_one("#sess_table", DataTable)
+            table_region = tbl.region
+            row_in_view = event.screen_y - table_region.y - 1
+            scroll_y = int(tbl.scroll_offset.y)
+            row_idx = max(0, min(row_in_view + scroll_y, len(tbl.rows) - 1))
+            if row_in_view >= 0:
+                self._show_action_menu(row_idx, event.screen_x, event.screen_y)
+
+    def _close_action_menu(self) -> None:
+        with contextlib.suppress(Exception):
+            panel = self.app.query_one("#rigi-action-panel")
+            panel.remove()
+
+    def _show_action_menu(self, row_idx: int, x: int, y: int) -> None:
+        self._close_action_menu()
+        sessions = tg_sessions.list_sessions()
+        if row_idx < 0 or row_idx >= len(sessions):
+            return
+        name = sessions[row_idx].name
+        is_active = cfg.config.active_session == name
+        items: list[ActionMenuItemData] = [
+            ActionMenuItemData(
+                "Validate",
+                callback=lambda n=name: self.run_worker(self._validate_one(n)),
+                color="green",
+            ),
+            ActionMenuItemData(
+                "Rename",
+                callback=lambda n=name: self.run_worker(self._rename(n)),
+            ),
+            ActionMenuItemData(
+                "Edit Profile",
+                callback=lambda n=name: self.run_worker(self._edit_profile(n)),
+            ),
+            ActionMenuItemData(
+                f"Set Active {'✓' if is_active else ''}",
+                callback=lambda n=name: self._set_active(n),
+                disabled=is_active,
+            ),
+            ActionMenuItemData(
+                "Delete",
+                callback=lambda n=name: self._do_delete(n),
+                color="red",
+            ),
+        ]
+        self.app.show_action_menu(items, title=name, x=x, y=y)
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
         if bid == "btn_add":
             self.run_worker(self._handle_add())
-
         elif bid == "btn_import":
             self.run_worker(self._handle_import())
-
-        elif bid == "btn_check_all":
-            await self._check_all()
-
-        elif bid == "btn_access":
-            name = self._selected_name()
-            if name:
-                await self._do_access(name)
-            else:
-                self.app.notify("Select a session first", severity="warning")
-
-        elif bid == "btn_delete":
-            name = self._selected_name()
-            if name:
-                self._do_delete(name)
-            else:
-                self.app.notify("Select a session first", severity="warning")
-
-        elif bid == "btn_edit" and self._accessed and self._info:
-            self.run_worker(self._handle_edit())
-
-        elif bid == "btn_avatar" and self._accessed:
-            self.run_worker(self._handle_avatar())
-
-        elif bid == "btn_export" and self._accessed:
-            self.run_worker(self._handle_export())
+        elif bid == "btn_refresh":
+            self._reload_table()
 
     async def _handle_add(self) -> None:
         name = await self.app.push_screen_wait(LoginScreen())
@@ -573,74 +609,63 @@ class SessionsTab(Widget):
             self._reload_table()
             self.app.notify(f"Session '{name}' imported", title=" Sessions")
 
-    async def _handle_edit(self) -> None:
-        if self._accessed and self._info:
-            updated = await self.app.push_screen_wait(EditProfileScreen(self._accessed, self._info))
-            if updated:
-                await self._do_access(self._accessed)
+    async def _validate_one(self, name: str) -> None:
+        tbl = self.query_one("#sess_table", DataTable)
+        tbl.update_cell(name, "status", "[yellow]… checking[/yellow]")
+        try:
+            status = await tg_client.check_validity(name)
+            tg_sessions.update_metadata_statuses({name: status})
+            tbl.update_cell(name, "status", self._status_markup(status))
+            if status == SessionStatus.VALID:
+                info = await tg_client.fetch_info(name)
+                tg_sessions.update_metadata(name, info)
+                self._reload_table()
+            self.app.notify(f"{name}: {status.value}", title=" Sessions")
+        except Exception as e:
+            log.exception("validate failed for %s", name)
+            self.app.notify(f"Validate error: {e}", severity="error")
 
-    async def _handle_avatar(self) -> None:
-        if self._accessed:
-            await self.app.push_screen_wait(SetAvatarScreen(self._accessed))
+    async def _rename(self, name: str) -> None:
+        new_name = await self.app.push_screen_wait(RenameScreen(name))
+        if new_name:
+            if cfg.config.active_session == name:
+                cfg.config.active_session = new_name
+                cfg.save_config(cfg.config)
+            self._reload_table()
+            self.app.notify(f"Renamed to '{new_name}'", title=" Sessions")
 
-    async def _handle_export(self) -> None:
-        if self._accessed:
-            await self.app.push_screen_wait(ExportChatScreen(self._accessed))
-
-    async def _do_access(self, name: str) -> None:
-        detail = self.query_one("#detail_info", Static)
-        detail.update("[dim]Connecting…[/dim]")
-        self._set_action_btns(False)
+    async def _edit_profile(self, name: str) -> None:
         try:
             info = await tg_client.fetch_info(name)
             tg_sessions.update_metadata(name, info)
-            self._accessed = name
-            self._info = info
-            self._reload_table()
-            kind_label = f"[dim]({info.kind.name.lower()})[/dim]"
-            detail.update(
-                f"[bold]{info.first_name} {info.last_name}[/bold]  "
-                f"{'@' + info.username if info.username else ''}\n"
-                f"[dim]Phone:[/dim]   {info.phone or '—'}\n"
-                f"[dim]DC:[/dim]      {info.dc_id or '—'}\n"
-                f"[dim]Bio:[/dim]     {info.bio or '—'}\n"
-                f"[dim]Session:[/dim] {name}.session  {kind_label}"
-            )
-            self._set_action_btns(True)
         except Exception as e:
-            detail.update(f"[red]Connection error: {e}[/red]")
-            log.exception(f"[sessions] access failed for {name!r}")
-
-    async def _check_all(self) -> None:
-        sessions = tg_sessions.list_sessions()
-        if not sessions:
-            self.app.notify("No sessions to check", severity="warning")
+            log.exception("fetch info failed for %s", name)
+            self.app.notify(f"Fetch info error: {e}", severity="error")
             return
-        self.app.notify(f"Checking {len(sessions)} sessions…", title=" Sessions")
-        tbl = self.query_one("#sess_table", DataTable)
-        for info in sessions:
-            tbl.update_cell(info.name, "status", "[yellow]… checking[/yellow]")
+        updated = await self.app.push_screen_wait(EditProfileScreen(name, info))
+        if updated:
+            try:
+                info = await tg_client.fetch_info(name)
+                tg_sessions.update_metadata(name, info)
+            except Exception:
+                pass
+            self._reload_table()
+            self.app.notify("Profile updated", title=" Sessions")
 
-        names = [s.name for s in sessions]
-        results = await tg_client.check_all_validity(names)
-
-        tg_sessions.update_metadata_statuses(results)
-        sessions_by_name = {info.name: info for info in tg_sessions.list_sessions()}
-        for name, status in results.items():
-            tbl.update_cell(name, "status", self._status_markup(status))
-            if name in sessions_by_name:
-                tbl.update_cell(name, "dc", str(sessions_by_name[name].dc_id or "—"))
-        valid = sum(1 for s in results.values() if s == SessionStatus.VALID)
-        self.app.notify(f"✓ {valid}/{len(results)} valid", title=" Sessions")
+    def _set_active(self, name: str) -> None:
+        cfg.config.active_session = name
+        cfg.save_config(cfg.config)
+        self._reload_table()
+        self.app.notify(f"Active session: {name}", title=" Sessions")
 
     def _do_delete(self, name: str) -> None:
         tg_sessions.delete_session(name)
-        if self._accessed == name:
-            self._accessed = None
-            self._info = None
-            self.query_one("#detail_info", Static).update(
-                "[dim]Select a session, then click [bold]Access[/bold] to load its info[/dim]"
-            )
-            self._set_action_btns(False)
+        if cfg.config.active_session == name:
+            cfg.config.active_session = None
+            cfg.save_config(cfg.config)
         self._reload_table()
-        self.app.notify(f"Session '{name}' deleted", title=" Sessions", severity="warning")
+        self.app.notify(
+            f"Session '{name}' deleted",
+            title=" Sessions",
+            severity="warning",
+        )

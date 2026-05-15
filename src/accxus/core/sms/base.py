@@ -65,6 +65,10 @@ class AbstractSmsProvider(ABC):
     async def list_services(self, country: int = 0) -> list[ServiceInfo]:
         return []
 
+    async def list_countries_for_service(self, service: str) -> list[tuple[int, str, float]]:
+        """Return list of (country_id, country_name, price) for a given service."""
+        return []
+
     async def wait_for_code(
         self,
         activation_id: str,
